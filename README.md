@@ -8,48 +8,68 @@
 
 ### ❌ El Problema Tradicional (Inseguro)
 
-Cuando un agente de IA interactúa directamente con servidores o requiere claves de infraestructura:
+Cuando se le otorgan credenciales directas o acceso a terminal bash a un agente de IA:
 
 ```mermaid
-flowchart LR
-    subgraph RIESGO["⚠️ Modelo Tradicional (Riesgo de Seguridad)"]
-        direction LR
-        Agent["🤖 Agente IA / LLM"] -->|"1. Solicita credenciales"| Vault["🔑 Passwords / Keys SSH"]
-        Agent -->|"2. Bash sin restricción (ej: sudo rm -rf)"| Prod["🖥️ Servidores"]
-        Vault -.->|"FILTRACIÓN EN LOGS / PROMPTS"| Leak["🚨 Credenciales Expuestas"]
-    end
+sequenceDiagram
+    autonumber
+    actor User as 👤 Usuario / Admin
+    participant LLM as 🤖 Agente IA (LLM)
+    participant Vault as 🔑 Vault / Credenciales
+    participant Server as 🖥️ Servidor de Producción
+
+    Note over LLM,Vault: ⚠️ MODELO TRADICIONAL INSEGURO
+    User->>LLM: "Revisa los servidores de producción"
+    LLM->>Vault: 1. Solicita Contraseñas / Claves SSH
+    Vault-->>LLM: 2. Retorna credenciales en texto plano
+    Note right of LLM: 🚨 RIESGO: Las credenciales quedan expuestas<br/>en los logs y contexto del LLM
+    LLM->>Server: 3. Ejecuta comandos bash directos (ej: sudo, rm -rf)
+    Server-->>LLM: 4. Salida con posible fuga de datos sensibles
 ```
 
-* **Riesgos**: Las credenciales se filtran en el historial del LLM, el agente puede ejecutar comandos destructivos de forma no supervisada, y no existe auditoría estricta ni aislamiento.
+* 🚨 **Fuga de Credenciales**: Las contraseñas quedan almacenadas en el contexto de la conversación.
+* 🚨 **Falta de Control**: El agente puede ejecutar comandos destructivos o no autorizados.
 
 ---
 
-### ✅ La Solución con `secure-it` (Cero Secretos expuestos)
+### ✅ La Solución con `secure-it` (Zero-Credentials to AI)
 
-`secure-it` actúa como un proxy MCP seguro y plano de control determinista entre el Agente IA y los servidores:
+`secure-it` actúa como un plano de control seguro y aislado entre el agente y la infraestructura:
 
 ```mermaid
 flowchart TD
-    subgraph SECURE["🛡️ Arquitectura Segura con secure-it"]
-        Agent["🤖 Agente IA (Claude, Cursor, VSCode)"]
-        MCP["🔌 Servidor MCP (npx secure-it)"]
-        DB[("💾 SQLite Persistente (~/.secure-it/secureit.db)")]
-        Policy["📜 Motor de Políticas & Permisos"]
-        Target["🖥️ Servidores Administrados"]
+    %% Estilos Visuales de Nodos
+    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef secureIt fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c;
+    classDef target fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c;
 
-        Agent -->|"1. Petición Estructurada (ej: os.disk_usage)"| MCP
-        MCP <-->|"2. Consulta Inventario & Auditoría"| DB
-        MCP <-->|"3. Valida Scopes & Esquemas"| Policy
-        MCP -->|"4. Ejecuta Acción Sintética / Aislada"| Target
-        Target -->|"5. Respuesta Sanitizada (Secretos removidos)"| Agent
+    subgraph CLIENT[" 🤖 Entorno del Cliente IA "]
+        Agent["🤖 Agente IA<br/><i>(Claude / Cursor / VSCode)</i>"]:::client
     end
+
+    subgraph PROXY[" 🛡️ Plano de Control secure-it (npx secure-it) "]
+        MCP["🔌 Servidor MCP Stdio / HTTP"]:::secureIt
+        Engine["⚙️ Evaluador de Políticas & Esquemas"]:::secureIt
+        DB[("💾 SQLite Persistente<br/><code>~/.secure-it/secureit.db</code>")]:::storage
+    end
+
+    subgraph INFRA[" 🖥️ Infraestructura "]
+        TargetServer["🖥️ Servidores Administrados<br/><i>(Dev / Test / Staging)</i>"]:::target
+    end
+
+    %% Flujos Interactivos
+    Agent -->|"1. Petición Estructurada<br/><i>(sin credenciales)</i>"| MCP
+    MCP -->|"2. Valida Scopes y Permisos"| Engine
+    Engine -->|"3. Consulta / Registra Estado"| DB
+    Engine -->|"4. Ejecuta Acción Sintética Aislada"| TargetServer
+    TargetServer -->|"5. Retorna Resultado Sanitizado"| MCP
+    MCP -->|"6. Respuesta JSON segura"| Agent
 ```
 
-* **Garantías de Seguridad**:
-  1. **Zero Credentials to AI**: El modelo **NUNCA** ve ni solicita contraseñas o claves SSH.
-  2. **Acciones Tipadas y Validadas**: Solo se permiten herramientas predefinidas con validación JSON Schema estricta.
-  3. **Control de Riesgo & Aprobaciones**: Acciones en producción o comandos directos requieren aprobación explícita.
-  4. **Auditoría Transparente**: Toda operación queda registrada con hashing canónico e identificadores únicos.
+* 🛡️ **Zero-Secrets**: El agente **NUNCA** recibe ni manipula claves privadas ni contraseñas.
+* 🛡️ **Validación Estricta**: Todas las acciones requieren aprobación de esquemas y comprobación de permisos.
+* 🛡️ **Auditoría Local**: Registro persistente e inmutable de todas las operaciones en SQLite.
 
 ---
 
