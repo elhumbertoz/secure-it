@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+dist
+coverage
+.env
+.env.*
+*.log
+*.pem
+*.key
+docs
+tests
+deploy
+migrations

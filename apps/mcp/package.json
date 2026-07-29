@@ -1,0 +1,20 @@
+{
+  "name": "@secure-it/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "secure-it-mcp": "dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@secure-it/contracts": "0.1.0",
+    "@secure-it/control-plane": "0.1.0",
+    "express": "5.2.1",
+    "express-rate-limit": "8.6.1",
+    "jose": "6.2.4"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6"
+  }
+}

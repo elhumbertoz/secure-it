@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:17.5-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-secureit_demo}
+      POSTGRES_USER: ${POSTGRES_USER:-secureit_demo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo-only-not-for-real-secrets}
+    volumes:
+      - secureit_demo_pg:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [control]
+    security_opt: [no-new-privileges:true]
+
+  opa:
+    image: openpolicyagent/opa:1.4.2-static
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    volumes:
+      - ./deploy/opa:/policies:ro
+    healthcheck:
+      test: ["CMD", "/opa", "eval", "1 == 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [control]
+    read_only: true
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  secureit_demo_pg:
+    name: secure-it-demo-postgres
+
+networks:
+  control:
+    internal: true
