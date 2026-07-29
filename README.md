@@ -138,10 +138,10 @@ Una vez guardada la configuración, abre tu cliente de IA y prueba estos prompts
 `secure-it` le proporciona a tu agente un conjunto de **12 herramientas estructuradas** con permisos basados en scopes:
 
 ```mermaid
-flowchart LR
-    classDef srv fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef act fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef job fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+flowchart TD
+    classDef srv fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef act fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef job fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c;
 
     subgraph SERVIDORES[" 🖥️ Servidores & Perfiles "]
         S1["secureit.servers.list"]:::srv
