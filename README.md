@@ -123,19 +123,37 @@ En los ajustes de **MCP Servers**, añade un nuevo servidor con:
 Una vez guardada la configuración, abre tu cliente de IA y prueba estos prompts:
 
 ```text
-💬 "Lista los servidores que tenemos registrados en el ambiente de desarrollo."
-💬 "Muestra los detalles del servidor db-dev-01.example."
-💬 "Ejecuta un diagnóstico de uso de disco en el servidor web-test-01."
-💬 "Registra un nuevo servidor staging para el equipo de plataforma."
+💬 "Registra un nuevo servidor dev para el equipo de desarrollo."
+💬 "Lista los servidores registrados en el ambiente dev."
+💬 "Muestra el estado de enrolamiento del nuevo servidor."
 ```
 
 *Al ejecutar cualquier comando, `secure-it` creará automáticamente la base de datos persistente SQLite en `~/.secure-it/secureit.db` sin requerir ninguna acción adicional.*
 
 ---
 
+### 🖥️ Agregar mi servidor (con usuario/contraseña o certificado)
+
+Si tus servidores hoy usan **usuario y contraseña** (credencial heredada), también
+puedes usar `secure-it`: la contraseña se importa una sola vez por la consola
+humana y nunca viaja por el chat.
+
+Guía paso a paso ([docs/11-guia-alta-servidores.md](file:///opt/source/secure-it/docs/11-guia-alta-servidores.md)):
+
+1. **Consola humana (Web en `http://127.0.0.1:4000`)** → importa la clave o contraseña SSH (vía interfaz web o `POST /api/credentials`).
+2. **Agente (MCP)** → registra el servidor con `secureit.servers.add` (sin credenciales).
+3. **Consola humana (Web en `http://127.0.0.1:4000`)** → aprueba el binding y confirma la identidad del host.
+4. **Agente (MCP)** → `secureit.servers.verify` deja el servidor `managed`.
+5. **Agente (MCP)** → ejecuta acciones (`secureit.ssh.execute_action`) y rota ciegamente (`secureit.credentials.rotate`).
+
+> Recomendado: tras el alta, rota y migra a `ssh_cert` o identidad de carga para
+> eliminar la dependencia de la contraseña estática.
+
+---
+
 ## 🛠️ Herramientas MCP Incluidas
 
-`secure-it` le proporciona a tu agente un conjunto de **12 herramientas estructuradas** con permisos basados en scopes:
+`secure-it` le proporciona a tu agente un conjunto de **13 herramientas estructuradas** con permisos basados en scopes:
 
 ```mermaid
 flowchart TD
@@ -149,7 +167,8 @@ flowchart TD
         S3["secureit.servers.add"]:::srv
         S4["secureit.servers.enrollment_status"]:::srv
         S5["secureit.servers.verify"]:::srv
-        S6["secureit.access_profiles.list"]:::srv
+        S6["secureit.servers.remove"]:::srv
+        S7["secureit.access_profiles.list"]:::srv
     end
 
     subgraph ACCIONES[" ⚙️ Acciones & Control "]
@@ -173,6 +192,7 @@ flowchart TD
    - `secureit.servers.add`: Registra un nuevo servidor para flujo de enrolamiento seguro.
    - `secureit.servers.enrollment_status`: Verifica si el servidor tiene aprobada la identidad y el binding.
    - `secureit.servers.verify`: Valida y activa servidores pendientes de enrolamiento.
+   - `secureit.servers.remove`: Elimina de forma segura un servidor del inventario con motivo de auditoría.
 2. **Acciones Tipadas y Diagnóstico**:
    - `secureit.access_profiles.list`: Consulta los perfiles de acceso autorizados por modo de conexión.
    - `secureit.actions.list`: Muestra el catálogo de acciones pre-aprobadas (`os.disk_usage`, `os.service_status`).

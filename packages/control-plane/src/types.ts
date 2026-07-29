@@ -54,6 +54,24 @@ export interface JobRecord {
   }>;
 }
 
+export type CredentialType = "ssh_key" | "api_token" | "db_password" | "ca_private_key" | "tpm_identity";
+export type CredentialStatus = "active" | "rotated" | "revoked" | "expired";
+
+export interface CredentialRecord {
+  id: string;
+  alias: string;
+  type: CredentialType;
+  owner: string;
+  environment: Environment;
+  status: CredentialStatus;
+  version: number;
+  lastRotatedAt: string;
+  expiresAt: string | null;
+  exportable: boolean;
+  maskedValue: string;
+  secretValue?: string;
+}
+
 export interface RequestContext {
   subject: string;
   scopes: ReadonlySet<string>;
@@ -68,3 +86,4 @@ export interface AuditEvent {
   objectIds: string[];
   reasonCode: string;
 }
+

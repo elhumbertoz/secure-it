@@ -31,12 +31,14 @@ const requiredScopes: Readonly<Record<string, string>> = Object.freeze({
   "secureit.servers.add": "secureit:servers:write",
   "secureit.servers.enrollment_status": "secureit:servers:read",
   "secureit.servers.verify": "secureit:servers:write",
+  "secureit.servers.remove": "secureit:servers:write",
   "secureit.actions.list": "secureit:actions:read",
   "secureit.ssh.execute_action": "secureit:ssh:action",
   "secureit.ssh.execute_command": "secureit:ssh:command",
   "secureit.jobs.get": "secureit:jobs:read",
   "secureit.jobs.cancel": "secureit:jobs:cancel",
-  "secureit.credentials.rotate": "secureit:credentials:rotate"
+  "secureit.credentials.rotate": "secureit:credentials:rotate",
+  "secureit.credentials.add": "secureit:credentials:write"
 });
 
 export const allDemoScopes = Object.freeze([...new Set(Object.values(requiredScopes))]);

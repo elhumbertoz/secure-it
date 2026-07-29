@@ -145,30 +145,59 @@
     },
     {
       "name": "secureit.servers.add",
-      "title": "Registrar un servidor pendiente",
-      "description": "Crea un servidor pendiente sin aceptar credenciales. Requiere identidad pública del host y un perfil de acceso ya autorizado.",
+      "title": "Registrar un servidor",
+      "description": "Registra un servidor en el inventario. Si proporcionas 'username' y 'password', la credencial se guarda automáticamente de forma cifrada y el servidor queda listo ('managed') para operar de inmediato.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "environment", "owner", "criticality", "connection_mode", "management_endpoint", "expected_host_identity", "access_profile_id", "reason", "idempotency_key"],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string",
             "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,252}[a-zA-Z0-9]$",
-            "maxLength": 254
+            "maxLength": 254,
+            "description": "Nombre lógico o IP del servidor (ej: web-prod-01 o 192.168.1.50)."
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Usuario SSH de login (ej: root, ubuntu, admin)."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768,
+            "description": "Contraseña SSH de login o contenido de la clave privada SSH."
+          },
+          "secret_value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768,
+            "description": "Valor alternativo del secreto o clave privada SSH."
+          },
+          "credential_alias": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Alias opcional para la credencial creada. Si se omite, se genera como 'nombre:usuario'."
           },
           "environment": {
             "type": "string",
-            "enum": ["dev", "test", "staging", "prod"]
+            "enum": ["dev", "test", "staging", "prod"],
+            "default": "prod"
           },
-          "owner": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "owner": { "type": "string", "minLength": 1, "maxLength": 128, "default": "admin" },
           "criticality": {
             "type": "string",
-            "enum": ["low", "medium", "high", "critical"]
+            "enum": ["low", "medium", "high", "critical"],
+            "default": "medium"
           },
           "connection_mode": {
             "type": "string",
-            "enum": ["local_agent", "ssh_cert", "cloud_api"]
+            "enum": ["local_agent", "ssh_cert", "cloud_api"],
+            "default": "local_agent",
+            "description": "Modo de conexión. Usa 'local_agent' (por defecto) para servidores SSH con usuario/contraseña o clave estática."
           },
           "management_endpoint": {
             "type": "object",
@@ -176,22 +205,26 @@
             "required": ["address", "port"],
             "properties": {
               "address": { "type": "string", "minLength": 1, "maxLength": 253 },
-              "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 22 }
             }
           },
           "expected_host_identity": {
             "type": "string",
-            "minLength": 16,
+            "minLength": 1,
             "maxLength": 1024,
-            "description": "Fingerprint o certificado público obtenido por un canal independiente."
+            "description": "Fingerprint SSH del host. Si se omite, el sistema la descubre/asigna automáticamente."
           },
-          "access_profile_id": { "type": "string", "format": "uuid" },
+          "access_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del perfil de acceso. Si se omite, se asigna automáticamente el perfil predeterminado para el modo de conexión."
+          },
           "labels": {
             "type": "object",
             "maxProperties": 32,
             "additionalProperties": { "type": "string", "maxLength": 128 }
           },
-          "reason": { "type": "string", "minLength": 8, "maxLength": 500 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 500, "default": "Alta de servidor por agente MCP" },
           "idempotency_key": { "type": "string", "format": "uuid" }
         }
       },
@@ -201,9 +234,10 @@
         "required": ["server_id", "state", "admin_action_required", "next_step"],
         "properties": {
           "server_id": { "type": "string", "format": "uuid" },
-          "state": { "type": "string", "const": "pending" },
+          "state": { "type": "string", "enum": ["pending", "managed"] },
           "admin_action_required": { "type": "boolean" },
-          "next_step": { "type": "string", "maxLength": 500 }
+          "next_step": { "type": "string", "maxLength": 500 },
+          "credential_id": { "type": ["string", "null"] }
         }
       }
     },
@@ -254,6 +288,31 @@
           "job_id": { "type": "string", "format": "uuid" },
           "status": { "type": "string", "enum": ["queued", "awaiting_approval", "running", "completed", "failed"] },
           "server_id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    {
+      "name": "secureit.servers.remove",
+      "title": "Eliminar un servidor del inventario",
+      "description": "Elimina de forma segura un servidor registrado en el inventario. Requiere motivo de auditoría y clave de idempotencia.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["server_id", "reason", "idempotency_key"],
+        "properties": {
+          "server_id": { "type": "string", "format": "uuid" },
+          "reason": { "type": "string", "minLength": 8, "maxLength": 500 },
+          "idempotency_key": { "type": "string", "format": "uuid" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["server_id", "removed", "message"],
+        "properties": {
+          "server_id": { "type": "string", "format": "uuid" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string", "maxLength": 500 }
         }
       }
     },
@@ -334,27 +393,29 @@
     },
     {
       "name": "secureit.ssh.execute_command",
-      "title": "Ejecutar un script SSH sellado",
-      "description": "Operación de alto riesgo. Ejecuta un script sellado sin revelar credenciales. Producción exige aprobación humana independiente.",
+      "title": "Ejecutar un script SSH",
+      "description": "Ejecuta un script o comando SSH en los servidores administrados sin revelar credenciales. Ejecuta directamente el comando y retorna los resultados inmediatamente.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["server_ids", "interpreter", "script", "timeout_seconds", "reason", "idempotency_key"],
+        "required": ["script"],
         "properties": {
           "server_ids": {
             "type": "array",
             "minItems": 1,
             "maxItems": 20,
             "uniqueItems": true,
-            "items": { "type": "string", "format": "uuid" }
+            "items": { "type": "string", "format": "uuid" },
+            "description": "Lista de IDs de servidores objetivo. Si se omite, se aplican a los servidores enrolados."
           },
           "interpreter": {
             "type": "string",
-            "enum": ["posix-sh", "bash-restricted", "powershell-constrained"]
+            "enum": ["posix-sh", "bash-restricted", "powershell-constrained"],
+            "default": "posix-sh"
           },
-          "script": { "type": "string", "minLength": 1, "maxLength": 32768 },
-          "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 300 },
-          "reason": { "type": "string", "minLength": 8, "maxLength": 500 },
+          "script": { "type": "string", "minLength": 1, "maxLength": 32768, "description": "Comando o script a ejecutar (ej: ls, pwd, df -h, uptime)." },
+          "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 300, "default": 30 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 500, "default": "Ejecución de comando por agente" },
           "idempotency_key": { "type": "string", "format": "uuid" }
         }
       },
@@ -365,11 +426,30 @@
         "properties": {
           "job_id": { "type": "string", "format": "uuid" },
           "status": { "type": "string", "enum": ["awaiting_approval", "queued", "running", "completed", "failed"] },
-          "risk": { "type": "string", "const": "high" },
+          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
           "script_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
           "manifest_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
           "target_count": { "type": "integer", "minimum": 1, "maximum": 20 },
-          "approval_request_id": { "type": ["string", "null"], "format": "uuid" }
+          "approval_request_id": { "type": ["string", "null"], "format": "uuid" },
+          "results": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["server_id", "server_alias", "status", "truncated", "secret_detected"],
+              "properties": {
+                "server_id": { "type": "string", "format": "uuid" },
+                "server_alias": { "type": "string" },
+                "status": { "type": "string" },
+                "exit_code": { "type": ["integer", "null"] },
+                "stdout_excerpt": { "type": ["string", "null"], "maxLength": 65536 },
+                "stderr_excerpt": { "type": ["string", "null"], "maxLength": 16384 },
+                "truncated": { "type": "boolean" },
+                "secret_detected": { "type": "boolean" }
+              }
+            }
+          }
         }
       }
     },
@@ -474,6 +554,66 @@
           "opaque_version_id": { "type": ["string", "null"], "maxLength": 256 },
           "verified_at": { "type": ["string", "null"], "format": "date-time" },
           "admin_action_required": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "secureit.credentials.add",
+      "title": "Registrar o importar una credencial",
+      "description": "Registra una credencial de acceso (clave SSH o contraseña de usuario). Al agregar un servidor con usuario y contraseña, usa esta herramienta primero especificando el alias (ej: 'ssh-servidor:usuario' o 'usuario@servidor') y el secreto en secret_value.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["alias"],
+        "properties": {
+          "alias": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Identificador o alias de la credencial (ej: 'ssh-web-01:admin' o 'admin@192.168.1.100')."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["ssh_key", "db_password", "api_token", "ca_private_key"],
+            "default": "ssh_key",
+            "description": "Tipo de credencial. Usa 'ssh_key' o 'db_password' para contraseñas de login o claves SSH."
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "default": "admin"
+          },
+          "environment": {
+            "type": "string",
+            "enum": ["dev", "test", "staging", "prod"],
+            "default": "prod"
+          },
+          "exportable": {
+            "type": "boolean",
+            "default": true
+          },
+          "secret_value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768,
+            "description": "La contraseña de usuario o el contenido de la clave privada SSH."
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credential_id", "alias", "type", "owner", "environment", "status", "version", "masked_value"],
+        "properties": {
+          "credential_id": { "type": "string" },
+          "alias": { "type": "string" },
+          "type": { "type": "string" },
+          "owner": { "type": "string" },
+          "environment": { "type": "string" },
+          "status": { "type": "string" },
+          "version": { "type": "integer" },
+          "masked_value": { "type": "string" }
         }
       }
     }

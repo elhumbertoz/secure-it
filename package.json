@@ -6,7 +6,8 @@
   "type": "module",
   "bin": {
     "secure-it": "apps/mcp/dist/index.js",
-    "secure-it-mcp": "apps/mcp/dist/index.js"
+    "secure-it-mcp": "apps/mcp/dist/index.js",
+    "secure-it-admin": "apps/admin/dist/index.js"
   },
   "workspaces": [
     "apps/*",
@@ -16,9 +17,11 @@
     "build": "tsc -b",
     "clean": "tsc -b --clean",
     "mcp": "node apps/mcp/dist/index.js",
+    "admin": "node apps/admin/dist/index.js",
     "dev:mcp": "npm run dev:mcp:stdio",
     "dev:mcp:stdio": "tsx apps/mcp/src/index.ts",
     "dev:mcp:http": "tsx apps/mcp/src/http-entry.ts",
+    "dev:admin": "tsx apps/admin/src/index.ts",
     "start:mcp:http": "node apps/mcp/dist/http-entry.js",
     "lint": "tsc -b --pretty false",
     "test": "vitest run",

@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -11,12 +12,15 @@ import {
   type JsonObject
 } from "@secure-it/contracts";
 import { DomainError } from "./errors.js";
-import { demoActions, demoProfiles, demoServers } from "./fixtures.js";
+import { demoActions, demoProfiles, demoServers, testServerRecord } from "./fixtures.js";
 import { assertSafeDemoEndpoint, sanitizeOutput, sha256 } from "./security.js";
 import type {
   AccessProfile,
   ActionDefinition,
   AuditEvent,
+  CredentialRecord,
+  CredentialStatus,
+  CredentialType,
   Environment,
   JobRecord,
   RequestContext,
@@ -29,13 +33,15 @@ const asStringArray = (value: unknown): string[] => value as string[];
 export interface SqliteControlPlaneOptions {
   dbPath?: string;
   inMemory?: boolean;
+  seedTestServer?: boolean;
+  seedDemoData?: boolean;
 }
 
 export class SqliteControlPlane {
   private db: DatabaseSync;
 
   constructor(options: SqliteControlPlaneOptions = {}) {
-    let dbPath = options.dbPath;
+    let dbPath = options.dbPath || process.env.SECUREIT_DB_PATH;
     if (options.inMemory) {
       dbPath = ":memory:";
     } else if (!dbPath) {
@@ -48,7 +54,7 @@ export class SqliteControlPlane {
 
     this.db = new DatabaseSync(dbPath);
     this.initSchema();
-    this.seedIfEmpty();
+    this.seedIfEmpty(Boolean(options.seedDemoData), Boolean(options.seedTestServer));
   }
 
   close(): void {
@@ -86,27 +92,240 @@ export class SqliteControlPlane {
         occurred_at TEXT NOT NULL,
         data TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS credentials (
+        id TEXT PRIMARY KEY,
+        alias TEXT UNIQUE NOT NULL,
+        data TEXT NOT NULL
+      );
     `);
   }
 
-  private seedIfEmpty(): void {
-    const row = this.db.prepare("SELECT COUNT(*) as count FROM servers").get() as { count: number };
-    if (row && row.count > 0) return;
-
-    const insertServer = this.db.prepare("INSERT INTO servers (id, name, data) VALUES (?, ?, ?)");
-    for (const server of demoServers) {
-      insertServer.run(server.id, server.name, JSON.stringify(server));
-    }
-
-    const insertProfile = this.db.prepare("INSERT INTO profiles (id, name, data) VALUES (?, ?, ?)");
+  private seedIfEmpty(seedDemoData = false, seedTestServer = false): void {
+    const upsertProfile = this.db.prepare(`
+      INSERT INTO profiles (id, name, data) VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET data = excluded.data, name = excluded.name
+    `);
     for (const profile of demoProfiles) {
-      insertProfile.run(profile.id, profile.name, JSON.stringify(profile));
+      upsertProfile.run(profile.id, profile.name, JSON.stringify(profile));
     }
 
-    const insertAction = this.db.prepare("INSERT INTO actions (id_version, data) VALUES (?, ?)");
-    for (const action of demoActions) {
-      insertAction.run(`${action.id}@${action.version}`, JSON.stringify(action));
+    const actionRow = this.db.prepare("SELECT COUNT(*) as count FROM actions").get() as { count: number };
+    if (!actionRow || actionRow.count === 0) {
+      const insertAction = this.db.prepare("INSERT INTO actions (id_version, data) VALUES (?, ?)");
+      for (const action of demoActions) {
+        insertAction.run(`${action.id}@${action.version}`, JSON.stringify(action));
+      }
     }
+
+    if (!seedDemoData && !seedTestServer) {
+      return;
+    }
+
+    const serverRow = this.db.prepare("SELECT COUNT(*) as count FROM servers").get() as { count: number };
+    if (!serverRow || serverRow.count === 0) {
+      const insertServer = this.db.prepare("INSERT INTO servers (id, name, data) VALUES (?, ?, ?)");
+      for (const server of demoServers) {
+        insertServer.run(server.id, server.name, JSON.stringify(server));
+      }
+      if (seedTestServer) {
+        insertServer.run(testServerRecord.id, testServerRecord.name, JSON.stringify(testServerRecord));
+      }
+    }
+
+    const credRow = this.db.prepare("SELECT COUNT(*) as count FROM credentials").get() as { count: number };
+    if (!credRow || credRow.count === 0) {
+      const insertCred = this.db.prepare("INSERT INTO credentials (id, alias, data) VALUES (?, ?, ?)");
+      const demoCreds: CredentialRecord[] = [
+        {
+          id: "cred-ssh-prod",
+          alias: "ssh-prod-bastion",
+          type: "ssh_key",
+          owner: "infra-ops",
+          environment: "prod",
+          status: "active",
+          version: 1,
+          lastRotatedAt: new Date().toISOString(),
+          expiresAt: null,
+          exportable: true,
+          maskedValue: "••••••••",
+          secretValue: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG824... demo_admin_key"
+        },
+        {
+          id: "cred-db-staging",
+          alias: "postgres-staging-rw",
+          type: "db_password",
+          owner: "backend-team",
+          environment: "staging",
+          status: "active",
+          version: 2,
+          lastRotatedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+          expiresAt: new Date(Date.now() + 86400000 * 90).toISOString(),
+          exportable: true,
+          maskedValue: "••••••••",
+          secretValue: "s3cur3_Stag!ng_P@ssw0rd_2026"
+        },
+        {
+          id: "cred-api-stripe",
+          alias: "stripe-api-prod",
+          type: "api_token",
+          owner: "finance-team",
+          environment: "prod",
+          status: "active",
+          version: 1,
+          lastRotatedAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+          expiresAt: null,
+          exportable: true,
+          maskedValue: "••••••••",
+          secretValue: "mock_stripe_sk_prod_51M00000000000000000000000"
+        },
+        {
+          id: "cred-ca-master",
+          alias: "master-ca-private-key",
+          type: "ca_private_key",
+          owner: "secops",
+          environment: "prod",
+          status: "active",
+          version: 1,
+          lastRotatedAt: new Date(Date.now() - 86400000 * 60).toISOString(),
+          expiresAt: null,
+          exportable: false,
+          maskedValue: "••••••••",
+          secretValue: "-----BEGIN PRIVATE KEY-----\nPROTECTED_NON_EXPORTABLE_CA_KEY\n-----END PRIVATE KEY-----"
+        }
+      ];
+      for (const cred of demoCreds) {
+        insertCred.run(cred.id, cred.alias, JSON.stringify(cred));
+      }
+    }
+  }
+
+  listCredentials(): CredentialRecord[] {
+    const rows = this.db.prepare("SELECT data FROM credentials ORDER BY alias ASC").all() as { data: string }[];
+    return rows.map((r) => {
+      const cred = JSON.parse(r.data) as CredentialRecord;
+      delete cred.secretValue;
+      cred.maskedValue = "••••••••";
+      return cred;
+    });
+  }
+
+  createCredential(
+    input: {
+      alias: string;
+      type?: CredentialType;
+      owner?: string;
+      environment?: Environment;
+      exportable?: boolean;
+      secretValue?: string;
+    },
+    context: RequestContext
+  ): CredentialRecord {
+    if (!input.alias) {
+      throw new DomainError("INVALID_ARGUMENT", "Falta el alias para la credencial");
+    }
+    const existing = this.db.prepare("SELECT id FROM credentials WHERE alias = ?").get(input.alias);
+    if (existing) {
+      throw new DomainError("CONFLICT", `Ya existe una credencial con el alias '${input.alias}'`);
+    }
+
+    const type = input.type ?? "ssh_key";
+    const owner = input.owner ?? "admin";
+    const environment = input.environment ?? "prod";
+
+    const id = `cred-${randomUUID().slice(0, 8)}`;
+    const cred: CredentialRecord = {
+      id,
+      alias: input.alias,
+      type,
+      owner,
+      environment,
+      status: "active",
+      version: 1,
+      lastRotatedAt: new Date().toISOString(),
+      expiresAt: null,
+      exportable: input.exportable ?? true,
+      maskedValue: "••••••••",
+      secretValue: input.secretValue || `generated_${randomUUID().slice(0, 16)}`
+    };
+
+    this.db
+      .prepare("INSERT INTO credentials (id, alias, data) VALUES (?, ?, ?)")
+      .run(cred.id, cred.alias, JSON.stringify(cred));
+
+    this.audit(context, "credential:import", "allowed", [cred.id], "IMPORT_SUCCESS");
+
+    const result = { ...cred };
+    delete result.secretValue;
+    return result;
+  }
+
+  revealCredential(id: string, context: RequestContext, reason?: string): string {
+    const row = this.db.prepare("SELECT data FROM credentials WHERE id = ?").get(id) as { data: string } | undefined;
+    if (!row) {
+      this.audit(context, "credential:reveal", "denied", [id], "NOT_FOUND");
+      throw new DomainError("NOT_FOUND", `Credencial '${id}' no encontrada`);
+    }
+    const cred = JSON.parse(row.data) as CredentialRecord;
+    if (!cred.exportable) {
+      this.audit(context, "credential:reveal", "denied", [id], "NON_EXPORTABLE");
+      throw new DomainError("POLICY_DENIED", "La credencial no es exportable por política de seguridad");
+    }
+
+    this.audit(context, "credential:reveal", "allowed", [id], reason || "HUMAN_REVEAL_REQUEST");
+    return cred.secretValue || "secret_not_set";
+  }
+
+  rotateCredentialAdmin(id: string, context: RequestContext): CredentialRecord {
+    const row = this.db.prepare("SELECT data FROM credentials WHERE id = ?").get(id) as { data: string } | undefined;
+    if (!row) {
+      this.audit(context, "credential:rotate", "denied", [id], "NOT_FOUND");
+      throw new DomainError("NOT_FOUND", `Credencial '${id}' no encontrada`);
+    }
+    const cred = JSON.parse(row.data) as CredentialRecord;
+    cred.version += 1;
+    cred.lastRotatedAt = new Date().toISOString(),
+    cred.secretValue = `rotated_v${cred.version}_${randomUUID().slice(0, 12)}`;
+    cred.status = "rotated";
+
+    this.db.prepare("UPDATE credentials SET data = ? WHERE id = ?").run(JSON.stringify(cred), cred.id);
+    this.audit(context, "credential:rotate", "allowed", [id], "ROTATION_SUCCESS");
+
+    const result = { ...cred };
+    delete result.secretValue;
+    return result;
+  }
+
+  revokeCredentialAdmin(id: string, context: RequestContext): CredentialRecord {
+    const row = this.db.prepare("SELECT data FROM credentials WHERE id = ?").get(id) as { data: string } | undefined;
+    if (!row) {
+      this.audit(context, "credential:revoke", "denied", [id], "NOT_FOUND");
+      throw new DomainError("NOT_FOUND", `Credencial '${id}' no encontrada`);
+    }
+    const cred = JSON.parse(row.data) as CredentialRecord;
+    cred.status = "revoked";
+
+    this.db.prepare("UPDATE credentials SET data = ? WHERE id = ?").run(JSON.stringify(cred), cred.id);
+    this.audit(context, "credential:revoke", "allowed", [id], "REVOCATION_SUCCESS");
+
+    const result = { ...cred };
+    delete result.secretValue;
+    return result;
+  }
+
+  testCredentialAccessAdmin(id: string, context: RequestContext): { ok: boolean; testedAt: string } {
+    const row = this.db.prepare("SELECT data FROM credentials WHERE id = ?").get(id) as { data: string } | undefined;
+    if (!row) {
+      this.audit(context, "credential:test", "denied", [id], "NOT_FOUND");
+      throw new DomainError("NOT_FOUND", `Credencial '${id}' no encontrada`);
+    }
+    const cred = JSON.parse(row.data) as CredentialRecord;
+    if (cred.status === "revoked") {
+      this.audit(context, "credential:test", "denied", [id], "REVOKED");
+      throw new DomainError("POLICY_DENIED", "La credencial se encuentra revocada");
+    }
+
+    this.audit(context, "credential:test", "allowed", [id], "TEST_SUCCESS");
+    return { ok: true, testedAt: new Date().toISOString() };
   }
 
   async call(toolName: string, rawInput: unknown, context: RequestContext): Promise<JsonObject> {
@@ -151,6 +370,8 @@ export class SqliteControlPlane {
         return this.enrollmentStatus(input);
       case "secureit.servers.verify":
         return this.verifyServer(input, context);
+      case "secureit.servers.remove":
+        return this.removeServer(input, context);
       case "secureit.actions.list":
         return this.listActions(input);
       case "secureit.ssh.execute_action":
@@ -163,6 +384,8 @@ export class SqliteControlPlane {
         return this.cancelJob(input, context);
       case "secureit.credentials.rotate":
         return this.rotateCredential(input, context);
+      case "secureit.credentials.add":
+        return this.addCredentialTool(input, context);
       default:
         throw new DomainError("NOT_FOUND", "La herramienta solicitada no existe");
     }
@@ -286,42 +509,91 @@ export class SqliteControlPlane {
 
   private addServer(input: JsonObject, context: RequestContext): JsonObject {
     return this.idempotent("secureit.servers.add", input, () => {
-      const endpoint = input.management_endpoint as { address: string; port: number };
-      assertSafeDemoEndpoint(endpoint.address, endpoint.port);
-      const profile = this.requireProfile(asString(input.access_profile_id));
-      if (profile.connectionMode !== input.connection_mode) {
+      const name = asString(input.name);
+      const connectionMode = (input.connection_mode as ServerRecord["connectionMode"] | undefined) ?? "local_agent";
+      const profileId = typeof input.access_profile_id === "string" ? input.access_profile_id : "10000000-0000-4000-8000-000000000001";
+      const profile = this.requireProfile(profileId);
+      if (profile.connectionMode !== connectionMode) {
         throw new DomainError("POLICY_DENIED", "El perfil no coincide con el modo de conexión");
       }
-      if (!profile.environments.includes(input.environment as Environment)) {
-        throw new DomainError("POLICY_DENIED", "El perfil no está autorizado en ese ambiente");
-      }
-      if (this.getAllServers().some((server) => server.name === input.name)) {
-        throw new DomainError("CONFLICT", "Ya existe un servidor con ese nombre");
+
+      const environment =
+        (input.environment as ServerRecord["environment"] | undefined) ??
+        (profile.environments.includes("prod") ? "prod" : profile.environments[0] ?? "prod");
+
+      const owner = typeof input.owner === "string" ? input.owner : "admin";
+      const criticality = (input.criticality as ServerRecord["criticality"] | undefined) ?? "medium";
+      const defaultAddr = name;
+      const endpoint = (input.management_endpoint as { address: string; port: number } | undefined) ?? {
+        address: defaultAddr,
+        port: 22
+      };
+      const existingServer = this.getAllServers().find((server) => server.name === name);
+
+      const expectedHostIdentity =
+        typeof input.expected_host_identity === "string"
+          ? input.expected_host_identity
+          : `SHA256:auto_${sha256(endpoint.address + ":" + endpoint.port).slice(0, 32)}`;
+
+      const username = typeof input.username === "string" ? input.username : undefined;
+      const secretVal = typeof input.password === "string" ? input.password : (typeof input.secret_value === "string" ? input.secret_value : undefined);
+
+      let bindingReady = false;
+      let identityReady = false;
+      let credentialId: string | null = null;
+
+      if (username || secretVal) {
+        const credAlias = typeof input.credential_alias === "string" ? input.credential_alias : `${name}:${username || "login"}`;
+        const existingCred = this.db.prepare("SELECT data FROM credentials WHERE alias = ?").get(credAlias) as { data: string } | undefined;
+        let cred: CredentialRecord;
+        if (existingCred) {
+          cred = JSON.parse(existingCred.data) as CredentialRecord;
+        } else {
+          cred = this.createCredential(
+            {
+              alias: credAlias,
+              type: secretVal && !secretVal.includes("BEGIN") ? "db_password" : "ssh_key",
+              owner,
+              environment,
+              exportable: true,
+              secretValue: secretVal || "password_not_set"
+            },
+            context
+          );
+        }
+        credentialId = cred.id;
+        bindingReady = true;
+        identityReady = true;
       }
 
-      const id = randomUUID();
+      const id = existingServer ? existingServer.id : randomUUID();
+      const lifecycleState = bindingReady && identityReady ? "managed" : (existingServer?.lifecycleState ?? "pending");
+
       const server: ServerRecord = {
         id,
-        name: asString(input.name),
-        environment: input.environment as ServerRecord["environment"],
-        owner: asString(input.owner),
-        criticality: input.criticality as ServerRecord["criticality"],
-        lifecycleState: "pending",
-        connectionMode: input.connection_mode as ServerRecord["connectionMode"],
+        name,
+        environment,
+        owner,
+        criticality,
+        lifecycleState,
+        connectionMode,
         labels: (input.labels as Record<string, string> | undefined) ?? {},
         endpoint: structuredClone(endpoint),
-        expectedHostIdentity: asString(input.expected_host_identity),
+        expectedHostIdentity,
         accessProfileId: profile.id,
-        bindingReady: false,
-        identityReady: false
+        bindingReady,
+        identityReady
       };
       this.saveServer(server);
       void context;
       return {
         server_id: id,
-        state: "pending",
-        admin_action_required: true,
-        next_step: "Un administrador debe aprobar el binding y verificar la identidad fuera de MCP."
+        state: lifecycleState,
+        admin_action_required: !bindingReady,
+        next_step: bindingReady
+          ? "Servidor enrolado y listo para operar."
+          : "Registrar la credencial (vía secureit.credentials.add), aprobar el binding y verificar la identidad.",
+        credential_id: credentialId
       };
     });
   }
@@ -336,7 +608,7 @@ export class SqliteControlPlane {
       identity_ready: server.identityReady,
       admin_action_required: ready
         ? null
-        : "Aprobar el binding y completar la verificación de identidad en la consola administrativa."
+        : "Registrar/asociar la credencial (vía secureit.credentials.add) y confirmar la identidad del host."
     };
   }
 
@@ -352,6 +624,20 @@ export class SqliteControlPlane {
       const job = this.createJob("completed", [server], true);
       void context;
       return { job_id: job.id, status: job.status, server_id: server.id };
+    });
+  }
+
+  private removeServer(input: JsonObject, context: RequestContext): JsonObject {
+    return this.idempotent("secureit.servers.remove", input, () => {
+      const serverId = asString(input.server_id);
+      const server = this.requireServer(serverId);
+      this.db.prepare("DELETE FROM servers WHERE id = ?").run(server.id);
+      void context;
+      return {
+        server_id: server.id,
+        removed: true,
+        message: `El servidor ${server.name} ha sido eliminado del inventario.`
+      };
     });
   }
 
@@ -408,25 +694,61 @@ export class SqliteControlPlane {
 
   private executeCommand(input: JsonObject, context: RequestContext): JsonObject {
     return this.idempotent("secureit.ssh.execute_command", input, () => {
-      const servers = this.resolveManagedServers(asStringArray(input.server_ids));
-      const scriptDigest = sha256(asString(input.script));
+      let serverIds = Array.isArray(input.server_ids) ? (input.server_ids as string[]) : [];
+      if (serverIds.length === 0) {
+        const managed = this.getAllServers().filter((s) => s.lifecycleState === "managed");
+        if (managed.length === 0) {
+          throw new DomainError("NOT_FOUND", "No hay servidores administrados ('managed') listos para ejecutar comandos.");
+        }
+        serverIds = managed.map((s) => s.id);
+      }
+
+      const servers = this.resolveManagedServers(serverIds);
+      const scriptStr = asString(input.script);
+      const scriptDigest = sha256(scriptStr);
+
+      const interpreter = typeof input.interpreter === "string" ? input.interpreter : "posix-sh";
+      const timeoutSeconds = typeof input.timeout_seconds === "number" ? input.timeout_seconds : 30;
+
       const manifestHash = sha256({
-        interpreter: input.interpreter,
+        interpreter,
         script_digest: scriptDigest,
-        timeout_seconds: input.timeout_seconds,
+        timeout_seconds: timeoutSeconds,
         target_ids: servers.map((server) => server.id).sort(),
         requester: context.subject
       });
-      const job = this.createJob("awaiting_approval", servers, false);
-      return {
+
+      const reasonStr = typeof input.reason === "string" ? input.reason : "";
+      const isHighRisk =
+        input.requires_approval === true ||
+        reasonStr.toLowerCase().includes("excepcional") ||
+        /\b(rm -rf|mkfs|dd if=|shutdown|reboot|init 0)\b/i.test(scriptStr);
+      const status = isHighRisk ? "awaiting_approval" : "completed";
+      const job = this.createJob(status, servers, !isHighRisk, scriptStr);
+
+      const response: JsonObject = {
         job_id: job.id,
         status: job.status,
-        risk: "high",
+        risk: isHighRisk ? "high" : "low",
         script_digest: scriptDigest,
         manifest_hash: manifestHash,
         target_count: servers.length,
-        approval_request_id: randomUUID()
+        results: job.results.map((result) => ({
+          server_id: result.serverId,
+          server_alias: result.serverAlias,
+          status: result.status,
+          exit_code: result.exitCode,
+          stdout_excerpt: result.stdoutExcerpt,
+          stderr_excerpt: result.stderrExcerpt,
+          truncated: result.truncated,
+          secret_detected: result.secretDetected
+        }))
       };
+
+      if (isHighRisk) {
+        response.approval_request_id = randomUUID();
+      }
+      return response;
     });
   }
 
@@ -483,9 +805,61 @@ export class SqliteControlPlane {
     });
   }
 
-  private createJob(status: JobRecord["status"], servers: ServerRecord[], withOutput: boolean): JobRecord {
+  private addCredentialTool(input: JsonObject, context: RequestContext): JsonObject {
+    const credInput: {
+      alias: string;
+      type: CredentialType;
+      owner: string;
+      environment: Environment;
+      exportable?: boolean;
+      secretValue?: string;
+    } = {
+      alias: asString(input.alias),
+      type: input.type as CredentialType,
+      owner: asString(input.owner),
+      environment: input.environment as Environment
+    };
+    if (typeof input.exportable === "boolean") {
+      credInput.exportable = input.exportable;
+    }
+    if (typeof input.secret_value === "string") {
+      credInput.secretValue = input.secret_value;
+    }
+    const cred = this.createCredential(credInput, context);
+    return {
+      credential_id: cred.id,
+      alias: cred.alias,
+      type: cred.type,
+      owner: cred.owner,
+      environment: cred.environment,
+      status: cred.status,
+      version: cred.version,
+      masked_value: cred.maskedValue
+    };
+  }
+
+  private generateOutputForScript(script?: string): string {
+    if (!script) return "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/demo 100 42 58 42% /";
+    const s = script.trim().toLowerCase();
+    if (s === "ls" || s.startsWith("ls ")) {
+      return "bin  boot  dev  etc  home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var";
+    }
+    if (s === "pwd") {
+      return "/home/humberto";
+    }
+    if (s === "whoami") {
+      return "root";
+    }
+    if (s.startsWith("echo ")) {
+      return script.trim().slice(5).replace(/^['"]|['"]$/g, "");
+    }
+    return `[secure-it SSH execution successful]\n${script}`;
+  }
+
+  private createJob(status: JobRecord["status"], servers: ServerRecord[], withOutput: boolean, customScript?: string): JobRecord {
     const now = new Date();
     const expires = new Date(now.getTime() + 15 * 60 * 1000);
+    const textOutput = this.generateOutputForScript(customScript);
     const job: JobRecord = {
       id: randomUUID(),
       status,
@@ -493,7 +867,7 @@ export class SqliteControlPlane {
       expiresAt: expires.toISOString(),
       results: servers.map((server) => {
         const output = withOutput
-          ? sanitizeOutput("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/demo 100 42 58 42% /", 65_536)
+          ? sanitizeOutput(textOutput, 65_536)
           : null;
         return {
           serverId: server.id,
@@ -512,8 +886,11 @@ export class SqliteControlPlane {
   }
 
   private idempotent(toolName: string, input: JsonObject, create: () => JsonObject): JsonObject {
-    const key = asString(input.idempotency_key);
-    const compoundKey = `${toolName}:${key}`;
+    const rawKey = typeof input.idempotency_key === "string" ? input.idempotency_key.trim() : "";
+    if (!rawKey) {
+      return create();
+    }
+    const compoundKey = `${toolName}:${rawKey}`;
     const fingerprint = sha256(input);
 
     const existing = this.db

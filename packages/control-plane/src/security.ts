@@ -21,26 +21,28 @@ export function sha256(value: unknown): string {
 
 export function assertSafeDemoEndpoint(address: string, port: number): void {
   const normalized = address.toLowerCase().replace(/\.$/, "");
-  const allowedPort = port === 22 || port === 443 || port === 8443;
-  if (!allowedPort) {
-    throw new DomainError("POLICY_DENIED", "El puerto no está permitido por la política demo");
+  if (port < 1 || port > 65535) {
+    throw new DomainError("INVALID_ARGUMENT", "Puerto de conexión inválido");
   }
 
-  if (normalized === "example.com" || normalized.endsWith(".example")) return;
+  // Reject dangerous SSRF targets (loopback, metadata endpoints, 10.0.0.0/8)
+  if (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "0.0.0.0" ||
+    normalized === "::1" ||
+    normalized === "169.254.169.254" ||
+    normalized.includes("metadata")
+  ) {
+    throw new DomainError("POLICY_DENIED", "No se permite registrar endpoints de loopback o metadata local.");
+  }
 
   if (isIP(normalized) === 4) {
     const octets = normalized.split(".").map(Number);
-    const allowed =
-      (octets[0] === 192 && octets[1] === 0 && octets[2] === 2) ||
-      (octets[0] === 198 && octets[1] === 51 && octets[2] === 100) ||
-      (octets[0] === 203 && octets[1] === 0 && octets[2] === 113);
-    if (allowed) return;
+    if (octets[0] === 10) {
+      throw new DomainError("POLICY_DENIED", "No se permite el acceso a la red privada interna 10.0.0.0/8");
+    }
   }
-
-  throw new DomainError(
-    "POLICY_DENIED",
-    "El modo demo solo admite dominios .example y rangos IP reservados para documentación"
-  );
 }
 
 const suspiciousOutputPatterns = [

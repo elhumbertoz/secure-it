@@ -20,12 +20,12 @@ const demoContext: RequestContext = {
 };
 
 describe("SqliteControlPlane (Zero-DB persistence)", () => {
-  it("inicializa el esquema y datos demo por defecto", async () => {
+  it("inicializa el esquema sin servidores de ejemplo por defecto", async () => {
     const cp = new SqliteControlPlane({ inMemory: true });
     const serversResult = await cp.call("secureit.servers.list", {}, demoContext);
     expect(serversResult).toHaveProperty("servers");
     const servers = serversResult.servers as unknown[];
-    expect(servers.length).toBeGreaterThan(0);
+    expect(servers.length).toBe(0);
     cp.close();
   });
 
@@ -63,6 +63,24 @@ describe("SqliteControlPlane (Zero-DB persistence)", () => {
         environment: "dev"
       });
       cp2.close();
+
+      // Instancia 3: Eliminar el servidor y comprobar persistencia de la eliminación
+      const cp3 = new SqliteControlPlane({ dbPath });
+      const removeResult = await cp3.call(
+        "secureit.servers.remove",
+        {
+          server_id: serverId,
+          reason: "Eliminar servidor en test de integración",
+          idempotency_key: "40000000-0000-4000-8000-000000000098"
+        },
+        demoContext
+      );
+      expect(removeResult).toHaveProperty("removed", true);
+
+      await expect(
+        cp3.call("secureit.servers.get", { server_id: serverId }, demoContext)
+      ).rejects.toThrow();
+      cp3.close();
     } finally {
       if (existsSync(dbPath)) {
         unlinkSync(dbPath);

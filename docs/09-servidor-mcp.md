@@ -101,6 +101,7 @@ Scopes iniciales:
 | `secureit:ssh:action` | solicitar acciones tipadas por SSH |
 | `secureit:ssh:command` | solicitar scripts sellados; step-up y alto riesgo |
 | `secureit:credentials:rotate` | solicitar rotaciones ciegas |
+| `secureit:credentials:write` | registrar e importar credenciales al gestor cifrado |
 
 `tools/list` devuelve únicamente las herramientas correspondientes a los scopes y
 al rol efectivo. Tener un scope no concede acceso a todos los servidores: cada
@@ -205,6 +206,10 @@ necesita un token de bootstrap o una credencial heredada, un administrador lo
 obtiene o introduce fuera de MCP. La herramienta solo devuelve
 `admin_action_required`, nunca el token o secreto.
 
+#### `secureit.servers.remove`
+
+Elimina de forma segura un servidor del inventario activo en la base de datos persistente. Exige `server_id`, un motivo explícito de auditoría (`reason`) y una clave de idempotencia (`idempotency_key`).
+
 ### Ejecución
 
 #### `secureit.actions.list`
@@ -237,6 +242,10 @@ limitados en tamaño y marcados como datos no confiables. Detectar una posible f
 de secretos bloquea el contenido y genera un incidente.
 
 ### Credenciales
+
+#### `secureit.credentials.add`
+
+Registra o importa una nueva credencial (clave SSH, contraseña de usuario, token de API o clave privada CA) en el gestor cifrado. Permite al Agente MCP registrar credenciales proporcionadas por el usuario. El secreto es almacenado de forma cifrada en el plano de control y la respuesta de la herramienta solo devuelve metadatos y el valor enmascarado `masked_value: ••••••••`.
 
 #### `secureit.credentials.rotate`
 
@@ -273,16 +282,24 @@ revelarla o copiarla pertenecen exclusivamente a la consola humana descrita en
 3. Seguridad aprueba el binding sin crear una contraseña por servidor.
 4. `servers.verify` usa un certificado efímero y valida el host.
 
-### Con credencial heredada
+### Con credencial heredada (usuario y contraseña)
 
-1. `servers.add` deja el registro pendiente.
-2. Un administrador introduce el secreto directamente en el gestor y crea el
-   binding desde una interfaz separada.
-3. MCP solo observa que el binding está disponible.
-4. `servers.verify` prueba el acceso y se programa la migración a CA/daemon.
+1. El operador **importa la contraseña actual por la consola humana**
+   (`POST /api/credentials`); nunca por el chat. El backend la escribe en el
+   gestor de secretos y descarta el cuerpo.
+2. `servers.add` deja el registro pendiente, sin credenciales.
+3. Un administrador crea/asocia el binding lógico entre la credencial importada y
+   el `access_profile_id` del servidor, y marca `bindingReady`.
+4. Un administrador confirma la identidad del host (fingerprint/certificado
+   obtenido por canal independiente) y marca `identityReady`.
+5. MCP solo observa que el binding está disponible
+   (`secureit.servers.enrollment_status`).
+6. `servers.verify` prueba el acceso (ciego) y deja el servidor en `managed`.
+7. `credentials.rotate` rota ciegamente y se programa la migración a CA/daemon.
 
-El agente puede completar el inventario, pero no puede convertir el alta en un
-canal de entrada o salida de credenciales.
+El agente puede completar el inventario y operar, pero no puede convertir el alta
+en un canal de entrada o salida de credenciales. Para el paso a paso completo
+ver [Guía de alta de servidores con contraseña](11-guia-alta-servidores.md).
 
 ## Resultados y errores MCP
 

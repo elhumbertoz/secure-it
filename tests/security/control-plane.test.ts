@@ -30,7 +30,7 @@ describe("controles del plano de control", () => {
   });
 
   it("aplica scopes en el dominio, no solo en tools/list", async () => {
-    const plane = new DemoControlPlane();
+    const plane = new DemoControlPlane({ seedTestServer: true });
     await expect(
       plane.call(
         "secureit.ssh.execute_action",
@@ -48,7 +48,7 @@ describe("controles del plano de control", () => {
   });
 
   it("repite una respuesta idempotente y rechaza reutilización conflictiva", async () => {
-    const plane = new DemoControlPlane();
+    const plane = new DemoControlPlane({ seedTestServer: true });
     const input = {
       action_id: "os.disk_usage",
       action_version: 1,
@@ -71,7 +71,7 @@ describe("controles del plano de control", () => {
   });
 
   it("no conserva scripts ciegos en auditoría", async () => {
-    const plane = new DemoControlPlane();
+    const plane = new DemoControlPlane({ seedTestServer: true });
     const marker = "SYNTHETIC_SCRIPT_MARKER_DO_NOT_STORE";
     await plane.call(
       "secureit.ssh.execute_command",

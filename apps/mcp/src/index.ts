@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SqliteControlPlane } from "@secure-it/control-plane";
 import { createMcpServer } from "./server.js";
 
 async function main(): Promise<void> {
-  const server = createMcpServer();
-  await server.connect(new StdioServerTransport());
-  console.error("secure-it MCP activo por stdio (Zero-Docker / Zero-DB setup).");
+  const controlPlane = new SqliteControlPlane();
+  const mcpServer = createMcpServer({ controlPlane });
+
+  console.error("🛡️ secure-it MCP Server activo por stdio");
+  await mcpServer.connect(new StdioServerTransport());
 }
 
 main().catch((error: unknown) => {

@@ -1,19 +1,21 @@
 {
-  "name": "@secure-it/mcp",
+  "name": "@secure-it/admin",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist/server.js",
+  "exports": {
+    ".": "./dist/server.js"
+  },
+  "types": "./dist/server.d.ts",
   "bin": {
-    "secure-it-mcp": "dist/index.js"
+    "secure-it-admin": "dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "@secure-it/admin": "0.1.0",
     "@secure-it/contracts": "0.1.0",
     "@secure-it/control-plane": "0.1.0",
     "express": "5.2.1",
-    "express-rate-limit": "8.6.1",
-    "jose": "6.2.4"
+    "express-rate-limit": "8.6.1"
   },
   "devDependencies": {
     "@types/express": "5.0.6"

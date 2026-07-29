@@ -48,7 +48,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
       outputSchema: tool.outputSchema as Tool["outputSchema"],
       annotations: {
         readOnlyHint: isReadOnly(tool.name),
-        destructiveHint: tool.name === "secureit.credentials.rotate",
+        destructiveHint: tool.name === "secureit.credentials.rotate" || tool.name === "secureit.servers.remove",
         idempotentHint: isReadOnly(tool.name) || tool.name !== "secureit.ssh.execute_command",
         openWorldHint: false
       }
@@ -83,6 +83,7 @@ function isReadOnly(toolName: string): boolean {
 }
 
 function toSafeToolError(error: unknown): CallToolResult {
+  console.error("ERR:", error);
   if (error instanceof DomainError) return toolError(error.code, error.message);
   if (error instanceof ContractValidationError) {
     return toolError(error.code, "Los argumentos no cumplen el contrato de la herramienta");

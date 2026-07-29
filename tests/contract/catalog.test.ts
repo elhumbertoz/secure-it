@@ -13,15 +13,29 @@ const profileId = "10000000-0000-4000-8000-000000000001";
 
 describe("catálogo MCP", () => {
   it("mantiene un scope para cada herramienta publicada", () => {
-    expect(toolCatalog.tools).toHaveLength(12);
+    expect(toolCatalog.tools).toHaveLength(14);
     expect(new Set(toolCatalog.tools.map((tool) => tool.name)).size).toBe(toolCatalog.tools.length);
   });
 
   it("ejecuta la vertical demo y valida cada salida producida", async () => {
-    const plane = new DemoControlPlane();
+    const plane = new DemoControlPlane({ seedTestServer: true });
 
     const list = await plane.call("secureit.servers.list", {}, context);
     validateToolOutput("secureit.servers.list", list);
+
+    const cred = await plane.call(
+      "secureit.credentials.add",
+      {
+        alias: "demo-cred-01",
+        type: "ssh_key",
+        owner: "platform-team",
+        environment: "test",
+        secret_value: "my-secret-key-123"
+      },
+      context
+    );
+    validateToolOutput("secureit.credentials.add", cred);
+    expect(cred).not.toHaveProperty("secret_value");
 
     const get = await plane.call("secureit.servers.get", { server_id: serverId }, context);
     validateToolOutput("secureit.servers.get", get);
@@ -115,6 +129,18 @@ describe("catálogo MCP", () => {
     );
     validateToolOutput("secureit.credentials.rotate", rotation);
     expect(rotation).not.toHaveProperty("secret");
+
+    const removed = await plane.call(
+      "secureit.servers.remove",
+      {
+        server_id: added.server_id,
+        reason: "Eliminación de prueba de servidor recién creado",
+        idempotency_key: "40000000-0000-4000-8000-000000000006"
+      },
+      context
+    );
+    validateToolOutput("secureit.servers.remove", removed);
+    expect(removed.removed).toBe(true);
   });
 
   it("rechaza propiedades no declaradas", () => {
