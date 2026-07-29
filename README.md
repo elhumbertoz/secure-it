@@ -1,115 +1,89 @@
-# 🛡️ secure-it: Agente Seguro para Operar Infraestructura (Guía DIY)
+# 🛡️ secure-it
 
-> **Plano de control y servidor MCP (Model Context Protocol) para operar infraestructura sin exponer contraseñas, claves privadas ni tokens al agente de IA.**
+### *Deja de darle tus claves SSH y contraseñas sudo a los Modelos de IA.*
+
+**El plano de control seguro y servidor MCP (Model Context Protocol) para operar infraestructura con Agentes IA (Claude, Cursor, VSCode) sin exponer una sola credencial ni arriesgar tus servidores de producción.**
+
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.0.0-339933?style=flat-square&logo=nodedotjs)](https://nodejs.org)
+[![MCP Standard](https://img.shields.io/badge/MCP-Standard-8A2BE2?style=flat-square)](https://modelcontextprotocol.io)
+[![Zero-Docker](https://img.shields.io/badge/Setup-Zero--Docker%20%7C%20Zero--DB-007ACC?style=flat-square)](#-inicio-rápido-hazlo-tú-mismo-en-1-minuto)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 ---
 
-## 📊 Descripción Gráfica: El Problema vs La Solución
+## 😱 El Dilema del Desarrollador Moderno
 
-### ❌ El Problema Tradicional (Inseguro)
+Todos queremos que **Claude, Cursor o Windsurf** nos ayuden a monitorear, diagnosticar y administrar nuestros servidores. Queremos decirles: *"Oye, revisa por qué la base de datos en staging tiene la memoria alta"* o *"Verifica el espacio en disco en los servidores web"*.
 
-Cuando se le otorgan credenciales directas o acceso a terminal bash a un agente de IA:
+Pero para hacer eso hoy, las opciones tradicionales dan miedo:
+
+1. **Darle la llave SSH o la contraseña root al LLM**:
+   - 🚨 *Riesgo enorme*: Las credenciales viajan en el prompt y quedan grabadas para siempre en los logs de la API y el historial del chat. Un prompt injection de un tercero o un error de copia puede filtrar la llave de tu infraestructura.
+2. **Darle una terminal Bash abierta al Agente**:
+   - 🚨 *Riesgo alucinatorio*: El modelo intenta solucionar un problema y ejecuta un `sudo rm -rf`, modifica un archivo de configuración crítico en producción o elimina un volumen sin que te des cuenta.
+
+> **Hasta ahora no había un punto medio entre "no darle acceso a la IA" y "entregarle las llaves del reino".**
+
+---
+
+## ✨ La Solución: `secure-it`
+
+`secure-it` es una capa de abstracción y plano de control determinista que actúa como intermediario entre los Agentes de IA y tus servidores mediante el estándar **MCP (Model Context Protocol)**.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 👤 Usuario / Admin
-    participant LLM as 🤖 Agente IA (LLM)
-    participant Vault as 🔑 Vault / Credenciales
-    participant Server as 🖥️ Servidor de Producción
+    actor Admin as 👤 Desarrollador / Admin
+    participant AI as 🤖 Agente IA (Claude / Cursor)
+    participant MCP as 🛡️ secure-it MCP (npx secure-it)
+    participant DB as 💾 SQLite Local (~/.secure-it)
+    participant Server as 🖥️ Servidores de Infraestructura
 
-    Note over LLM,Vault: ⚠️ MODELO TRADICIONAL INSEGURO
-    User->>LLM: "Revisa los servidores de producción"
-    LLM->>Vault: 1. Solicita Contraseñas / Claves SSH
-    Vault-->>LLM: 2. Retorna credenciales en texto plano
-    Note right of LLM: 🚨 RIESGO: Las credenciales quedan expuestas<br/>en los logs y contexto del LLM
-    LLM->>Server: 3. Ejecuta comandos bash directos (ej: sudo, rm -rf)
-    Server-->>LLM: 4. Salida con posible fuga de datos sensibles
+    Note over AI,Server: 🔒 OPERACIÓN 100% SECURE-IT (ZERO-SECRETS TO AI)
+    Admin->>AI: "Revisa el uso de disco en el servidor web-01"
+    AI->>MCP: 1. Invocación MCP: secureit.ssh.execute_action(mountpoint: "/var")
+    Note right of AI: 💡 El Agente NUNCA pide ni conoce contraseñas ni llaves SSH
+    MCP->>DB: 2. Verifica permisos, scopes y registro de auditoría
+    MCP->>Server: 3. Ejecuta acción tipada sintética aislada (Zero-Shell Abierta)
+    Server-->>MCP: 4. Retorna métricas brutas
+    MCP-->>MCP: 5. Sanitiza salida (Filtra posibles secretos expuestos)
+    MCP-->>AI: 6. Retorna resultado estructurado seguro
+    AI-->>Admin: "El disco /var está al 42% de capacidad."
 ```
 
-* 🚨 **Fuga de Credenciales**: Las contraseñas quedan almacenadas en el contexto de la conversación.
-* 🚨 **Falta de Control**: El agente puede ejecutar comandos destructivos o no autorizados.
+---
+
+## ⚖️ Comparativa: Enfoque Tradicional vs `secure-it`
+
+| Característica | Terminal Bash Abierta / SSH Directo | 🛡️ `secure-it` MCP |
+| :--- | :---: | :---: |
+| **Exposición de Credenciales** | 🚨 **Alta** (Claves SSH/Passwords en prompts y logs) | 🛡️ **CERO** (El LLM nunca ve ni pide secretos) |
+| **Peligro de Comandos Destructivos** | 🚨 **Crítico** (`rm -rf`, `DROP TABLE`, `kill -9`) | 🛡️ **Protegido** (Acciones tipadas y validadas) |
+| **Validación de Parámetros** | ❌ **Ninguna** (Comandos arbitrarios) | ✅ **Estricta** (Validación JSON Schema por contrato) |
+| **Aprobación de Acciones Sensibles** | ❌ **No existe** | ✋ **Human-in-the-loop** (Tokens de aprobación requeridos) |
+| **Auditoría e Historial** | ⚠️ Logs dispersos de terminal | 📜 **Registro inmutable** con Hash Canónico en SQLite |
+| **Instalación e Infraestructura** | 🤯 Compleja (Daemons, agentes, Docker) | ⚡ **Instantánea** (`npx` + SQLite embebido) |
 
 ---
 
-### ✅ La Solución con `secure-it` (Zero-Credentials to AI)
+## ⚡ Inicio Rápido: Hazlo Tú Mismo en 1 Minuto
 
-`secure-it` actúa como un plano de control seguro y aislado entre el agente y la infraestructura:
+No necesitas levantar contenedores Docker, instalar bases de datos PostgreSQL ni configurar motores de políticas complejos. **Todo funciona fuera de la caja con Node.js y `npx`.**
 
-```mermaid
-flowchart TD
-    %% Estilos Visuales de Nodos
-    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
-    classDef secureIt fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-    classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c;
-    classDef target fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c;
-
-    subgraph CLIENT[" 🤖 Entorno del Cliente IA "]
-        Agent["🤖 Agente IA<br/><i>(Claude / Cursor / VSCode)</i>"]:::client
-    end
-
-    subgraph PROXY[" 🛡️ Plano de Control secure-it (npx secure-it) "]
-        MCP["🔌 Servidor MCP Stdio / HTTP"]:::secureIt
-        Engine["⚙️ Evaluador de Políticas & Esquemas"]:::secureIt
-        DB[("💾 SQLite Persistente<br/><code>~/.secure-it/secureit.db</code>")]:::storage
-    end
-
-    subgraph INFRA[" 🖥️ Infraestructura "]
-        TargetServer["🖥️ Servidores Administrados<br/><i>(Dev / Test / Staging)</i>"]:::target
-    end
-
-    %% Flujos Interactivos
-    Agent -->|"1. Petición Estructurada<br/><i>(sin credenciales)</i>"| MCP
-    MCP -->|"2. Valida Scopes y Permisos"| Engine
-    Engine -->|"3. Consulta / Registra Estado"| DB
-    Engine -->|"4. Ejecuta Acción Sintética Aislada"| TargetServer
-    TargetServer -->|"5. Retorna Resultado Sanitizado"| MCP
-    MCP -->|"6. Respuesta JSON segura"| Agent
-```
-
-* 🛡️ **Zero-Secrets**: El agente **NUNCA** recibe ni manipula claves privadas ni contraseñas.
-* 🛡️ **Validación Estricta**: Todas las acciones requieren aprobación de esquemas y comprobación de permisos.
-* 🛡️ **Auditoría Local**: Registro persistente e inmutable de todas las operaciones en SQLite.
+### Requisitos
+- **Node.js 22.0.0 o superior** (`node -v`)
 
 ---
 
-## 🚀 Guía "Hazlo Tú Mismo" (DIY Step-by-Step)
+### Paso 1: Configura tu Cliente de IA
 
-Sigue estos sencillos pasos para tener tu servidor MCP de infraestructura operando en menos de 2 minutos.
+Copia y pega la siguiente configuración en tu cliente MCP preferido:
 
-### 📋 Prerrequisito
-- **Node.js 22.0.0 o posterior** instalado (`node -v`).
-- **No requiere Docker Desktop ni base de datos externa**. Todo funciona 100% autónomo con `npx` y SQLite embebido.
-
----
-
-### 1️⃣ Paso 1: Ejecución Directa con `npx`
-
-Puedes probar el servidor directamente desde tu terminal o clonando este repositorio:
-
-```bash
-# Opción A: Ejecución desde el repositorio clonado
-npx .
-
-# Opción B: Mediante npm script
-npm run mcp
-```
-
-*Al iniciar por primera vez, `secure-it` creará automáticamente el directorio local `~/.secure-it/` con la base de datos `secureit.db` y datos sintéticos de demostración.*
-
----
-
-### 2️⃣ Paso 2: Configurar tu Cliente MCP (Claude Desktop / Cursor / VSCode)
-
-Agrega la configuración del servidor a tu cliente de IA preferido:
-
-#### 🤖 En Claude Desktop
-Abre o crea el archivo de configuración:
+#### 🤖 Para Claude Desktop
+Edita tu archivo `claude_desktop_config.json`:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-Agrega el bloque en `mcpServers`:
 
 ```json
 {
@@ -122,7 +96,7 @@ Agrega el bloque en `mcpServers`:
 }
 ```
 
-*O si deseas usar la copia local del código:*
+*Si estás desarrollando localmente en este repositorio:*
 
 ```json
 {
@@ -130,107 +104,139 @@ Agrega el bloque en `mcpServers`:
     "secure-it": {
       "command": "npx",
       "args": ["."],
-      "cwd": "/ruta/absoluta/a/tu/secure-it"
+      "cwd": "/ruta/absoluta/a/secure-it"
     }
   }
 }
 ```
 
-#### 💻 En Cursor / VSCode Agent / Windsurf
-Añade la herramienta MCP en la configuración de extensiones MCP con:
+#### 💻 Para Cursor / VSCode / Windsurf / Cline
+En los ajustes de **MCP Servers**, añade un nuevo servidor con:
+- **Type**: `stdio`
 - **Command**: `npx`
 - **Args**: `.` (o `-y @secure-it/mcp`)
-- **Working Directory**: `/ruta/a/secure-it`
 
 ---
 
-### 3️⃣ Paso 3: Probar las Herramientas en el Chat
+### Paso 2: ¡Empieza a chatear con tu infraestructura!
 
-Una vez guardada la configuración y reiniciado el cliente, puedes pedirle a Claude o a tu asistente comandos como:
+Una vez guardada la configuración, abre tu cliente de IA y prueba estos prompts:
 
-#### 🟢 Consulta de Inventario y Servidores
-> *"Lista todos los servidores registrados en el entorno de pruebas"*
+```text
+💬 "Lista los servidores que tenemos registrados en el ambiente de desarrollo."
+💬 "Muestra los detalles del servidor db-dev-01.example."
+💬 "Ejecuta un diagnóstico de uso de disco en el servidor web-test-01."
+💬 "Registra un nuevo servidor staging para el equipo de plataforma."
+```
 
-El agente utilizará automáticamente la herramienta `secureit.servers.list`.
-
-#### 🟢 Consultar Estado de un Servidor
-> *"Muestra los detalles del servidor 20000000-0000-4000-8000-000000000001"*
-
-El agente invocará `secureit.servers.get`.
-
-#### 🟢 Ejecutar una Acción Diagnóstica
-> *"Ejecuta la acción os.disk_usage en el servidor web-test-01.example para revisar el punto de montaje /var"*
-
-El agente invocará `secureit.ssh.execute_action` con parámetros validados por esquema.
-
-#### 🟢 Registrar un Nuevo Servidor
-> *"Registra un nuevo servidor llamado db-staging-01.example en el ambiente test con el perfil de acceso 10000000-0000-4000-8000-000000000001"*
-
-El agente invocará `secureit.servers.add`, creando el registro en tu base de datos SQLite local.
+*Al ejecutar cualquier comando, `secure-it` creará automáticamente la base de datos persistente SQLite en `~/.secure-it/secureit.db` sin requerir ninguna acción adicional.*
 
 ---
 
-## 🛠️ Herramientas MCP Disponibles (Catálogo)
+## 🛠️ Herramientas MCP Incluidas
 
-`secure-it` publica 12 herramientas MCP filtradas por permisos (scopes):
+`secure-it` le proporciona a tu agente un conjunto de **12 herramientas estructuradas** con permisos basados en scopes:
 
-| Categogía | Herramienta MCP | Descripción |
-| :--- | :--- | :--- |
-| **Servidores** | `secureit.servers.list` | Listar servidores del inventario con filtros de ambiente y etiquetas. |
-| | `secureit.servers.get` | Obtener metadatos detallados de un servidor específico. |
-| | `secureit.servers.add` | Registrar un nuevo servidor para enrolamiento. |
-| | `secureit.servers.enrollment_status` | Consultar estado de enrolamiento y verificación. |
-| | `secureit.servers.verify` | Verificar la identidad y binding de un servidor enrolado. |
-| **Perfiles** | `secureit.access_profiles.list` | Listar perfiles de acceso autorizados por ambiente. |
-| **Acciones** | `secureit.actions.list` | Consultar catálogo de acciones permitidas y sus esquemas JSON. |
-| | `secureit.ssh.execute_action` | Ejecutar una acción tipada y preaprobada sobre uno o varios servidores. |
-| | `secureit.ssh.execute_command` | Solicitar la ejecución de un comando especial (requiere aprobación). |
-| **Trabajos** | `secureit.jobs.get` | Consultar estado y salida filtrada de un trabajo ejecutado. |
-| | `secureit.jobs.cancel` | Cancelar un trabajo en cola o pendiente. |
-| **Credenciales** | `secureit.credentials.rotate` | Solicitar la rotación ciega de credenciales sin revelar el secreto. |
+```mermaid
+flowchart LR
+    classDef srv fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef act fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef job fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+
+    subgraph SERVIDORES[" 🖥️ Servidores & Perfiles "]
+        S1["secureit.servers.list"]:::srv
+        S2["secureit.servers.get"]:::srv
+        S3["secureit.servers.add"]:::srv
+        S4["secureit.servers.enrollment_status"]:::srv
+        S5["secureit.servers.verify"]:::srv
+        S6["secureit.access_profiles.list"]:::srv
+    end
+
+    subgraph ACCIONES[" ⚙️ Acciones & Control "]
+        A1["secureit.actions.list"]:::act
+        A2["secureit.ssh.execute_action"]:::act
+        A3["secureit.ssh.execute_command"]:::act
+    end
+
+    subgraph TRABAJOS[" 📜 Trabajos & Credenciales "]
+        J1["secureit.jobs.get"]:::job
+        J2["secureit.jobs.cancel"]:::job
+        J3["secureit.credentials.rotate"]:::job
+    end
+```
+
+### Detalle de Funcionalidades
+
+1. **Gestión de Inventario de Servidores**:
+   - `secureit.servers.list`: Consulta servidores filtrados por ambiente (`dev`, `test`, `staging`, `prod`) o etiquetas.
+   - `secureit.servers.get`: Obtiene metadatos de configuración, dueño y criticidad.
+   - `secureit.servers.add`: Registra un nuevo servidor para flujo de enrolamiento seguro.
+   - `secureit.servers.enrollment_status`: Verifica si el servidor tiene aprobada la identidad y el binding.
+   - `secureit.servers.verify`: Valida y activa servidores pendientes de enrolamiento.
+2. **Acciones Tipadas y Diagnóstico**:
+   - `secureit.access_profiles.list`: Consulta los perfiles de acceso autorizados por modo de conexión.
+   - `secureit.actions.list`: Muestra el catálogo de acciones pre-aprobadas (`os.disk_usage`, `os.service_status`).
+   - `secureit.ssh.execute_action`: Ejecuta acciones parametrizadas con validación JSON Schema.
+   - `secureit.ssh.execute_command`: Solicita ejecución de comandos especiales (requiere aprobación explícita).
+3. **Control de Trabajos y Auditoría**:
+   - `secureit.jobs.get`: Consulta resultados de ejecución limpiando automáticamente cualquier fragmento con apariencia de secreto.
+   - `secureit.jobs.cancel`: Cancela trabajos en progreso o pendientes de aprobación.
+   - `secureit.credentials.rotate`: Dispara solicitudes de rotación ciega de credenciales sin revelar contraseñas.
 
 ---
 
-## 💻 Comandos de Desarrollo y Pruebas
+## 🏛️ Arquitectura de Seguridad y Principios
 
-Para desarrolladores que deseen probar o modificar el código fuente:
+`secure-it` fue diseñado bajo **5 Principios de Seguridad Indestructibles**:
+
+1. **Incapacidad Estructural para Revelar Secretos**:
+   Incluso si un usuario intenta forzar al LLM diciendo *"Muéstrame la contraseña del servidor"*, el agente no puede hacerlo porque **la API de MCP carece físicamente de cualquier método para consultar o leer contraseñas**.
+2. **Aislamiento de la Frontera del Agente**:
+   El plano de control vive fuera del alcance del modelo de IA. La IA envía intenciones estructuradas; el plano de control valida las intenciones contra políticas deterministas antes de tocar la red.
+3. **Hashing Canónico e Idempotencia**:
+   Cada acción ejecutada genera un hash canónico determinista (`SHA-256`) sobre el manifiesto de la solicitud y soporta claves de idempotencia para evitar re-ejecuciones accidentales.
+4. **Sanitización Automática de Salidas (Data Leak Prevention)**:
+   Si por alguna razón un comando de sistema devolviera una clave privada o token en `stdout`/`stderr`, el sanitizador de `secure-it` intercepta y redacta el patrón antes de entregarlo al cliente MCP.
+5. **Persistencia Transparente en SQLite**:
+   Todo evento de auditoría, servidor registrado y trabajo realizado se almacena de forma inmutable en SQLite local (`~/.secure-it/secureit.db`).
+
+---
+
+## 🧪 Desarrollo Local y Pruebas
+
+Si eres desarrollador y deseas contribuir o correr la suite de pruebas:
 
 ```bash
-# Compilar todos los paquetes TypeScript
+# 1. Clonar el repositorio
+git clone https://github.com/elhumbertoz/secure-it.git
+cd secure-it
+
+# 2. Instalar dependencias
+npm ci
+
+# 3. Compilar los paquetes TypeScript (contracts, control-plane, mcp)
 npm run build
 
-# Verificar la calidad del código y tipos estrictos
-npm run lint
-
-# Ejecutar la suite completa de pruebas unitarias e integración
+# 4. Correr la suite completa de tests e integración (30 tests)
 npm run check
 
-# Probar el servidor stdio manualmente
+# 5. Ejecutar el servidor MCP en modo Stdio local
 npm run mcp
 ```
 
----
-
-## 🔒 Arquitectura de Seguridad Avanzada
-
-Si deseas desplegar `secure-it` en un servidor remoto con soporte OAuth/OIDC y contenedores aislados:
-
-- **Streamable HTTP + OIDC**: Inicia con `npm run dev:mcp:http` especificando variables OIDC (`SECUREIT_OIDC_ISSUER`, `SECUREIT_OIDC_AUDIENCE`).
-- **PostgreSQL & OPA en Docker**: Inicia los servicios con `make demo` (usa `compose.yaml`).
+### Opciones Avanzadas de Despliegue
+- **Streamable HTTP + OAuth/OIDC**: Ejecuta `npm run dev:mcp:http` para desplegar un servidor MCP HTTP compatible con RFC 9728 y validación de tokens JWT por JWKS.
+- **Docker Compose (PostgreSQL + OPA)**: Para entornos empresariales distribuidos, utiliza `make demo` para desplegar los contenedores de PostgreSQL 17 y Open Policy Agent (OPA).
 
 ---
 
-## 📚 Documentación Técnica Detallada
+## 📄 Licencia
 
-Para comprender a fondo el diseño de seguridad y especificaciones:
+Este proyecto está bajo la Licencia [MIT](LICENSE).
 
-- [01. Objetivos, Requisitos y Límites](docs/01-requisitos-y-limites.md)
-- [02. Arquitectura de Referencia](docs/02-arquitectura.md)
-- [03. Modelo de Datos](docs/03-modelo-de-datos.md)
-- [04. Modelo de Amenazas y Controles](docs/04-modelo-de-amenazas.md)
-- [05. Contrato de Acciones y API](docs/05-contrato-de-acciones.md)
-- [06. Plan de Implementación y Operación](docs/06-plan-de-implementacion.md)
-- [07. Rotación y Recuperación de Credenciales](docs/07-rotacion-de-credenciales.md)
-- [08. Ejecución Ciega y Capacidades Temporales](docs/08-ejecucion-ciega.md)
-- [09. Diseño del Servidor MCP](docs/09-servidor-mcp.md)
-- [10. Interfaz Administrativa de Credenciales](docs/10-interfaz-administrativa-credenciales.md)
+---
+
+<p align="center">
+  <b>Construido con ❤️ para la comunidad de desarrolladores y Agentes de IA.</b><br/>
+  <i>¡Si este proyecto te resulta útil, considera darle una ⭐ en GitHub!</i>
+</p>
