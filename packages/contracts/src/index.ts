@@ -19,7 +19,8 @@ interface ToolCatalogDocument {
   tools: ToolDefinition[];
 }
 
-const catalogPath = fileURLToPath(new URL("../../../spec/mcp-tools.json", import.meta.url));
+// El catálogo viaja dentro del paquete; no depende de la estructura del monorepo.
+const catalogPath = fileURLToPath(new URL("../spec/mcp-tools.json", import.meta.url));
 const parsedCatalog = JSON.parse(readFileSync(catalogPath, "utf8")) as ToolCatalogDocument;
 
 export const toolCatalog = Object.freeze(parsedCatalog);

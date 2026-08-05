@@ -52,6 +52,29 @@ const suspiciousOutputPatterns = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/
 ];
 
+/**
+ * Patrones de script destructivos/peligrosos que fuerzan `awaiting_approval`
+ * en `execute_command` (que permanece sintético + gated: el agente nunca
+ * recibe shell crudo del objetivo). Endurecido frente al catálogo original:
+ * - borrados recursivos, formatos y escritura a bloque de dispositivo
+ * - dobles espacios que pretendían evadir `rm -rf` y variantes `--recursive`
+ * - fork bombs, chmod/chown recursivos, vaciado de archivos críticos
+ * - piping http a un shell de ejecución
+ */
+export const HIGH_RISK_SCRIPT = new RegExp(
+  [
+    // rm/rsync recursivos/forzados con o sin sudo, tolerando espacios extra
+    String.raw`(?:^|[\s;&|])+(?:sudo\s+)?(?:(?:rm|rsync)\s+(?:-[A-Za-z]*r[A-Za-z]*\s+)?-[A-Za-z]*f)`,
+    // destrucción de dispositivo / sistema de ficheros / arrancada
+    String.raw`(?:^|[\s;&|])+(?:sudo\s+)?(?:mkfs[.\w]*\s|dd\s+if=\S*|dd\s+of=\S*|(?::\(\)\s*\{\s*:\|:\s*&\s*\};?)|(?:shutdown|reboot|init\s+0|halt|poweroff)\b)`,
+    // permisos/propiedad recursivos o vaciado de archivos críticos
+    String.raw`(?:^|[\s;&|])+(?:sudo\s+)?(?:chmod\s+-R\b|chown\s+-R\b|>\s*/dev/(?:sd|nvme|vd)[A-Za-z0-9]*|>\s*/etc/(?:passwd|shadow|sudoers))`,
+    // piping de descargas a un shell de ejecución
+    String.raw`(?:^|[\s;&|])(?:curl|wget)\b[^|]*\|\s*(?:sh|bash)\b`
+  ].join("|"),
+  "i"
+);
+
 export function sanitizeOutput(output: string, maxBytes: number): {
   excerpt: string | null;
   truncated: boolean;

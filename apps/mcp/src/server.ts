@@ -12,29 +12,52 @@ import {
   toolsForScopes,
   type JsonObject
 } from "@secure-it/contracts";
-import { DemoControlPlane, SqliteControlPlane, DomainError } from "@secure-it/control-plane";
+import { DemoControlPlane, SqliteControlPlane, SshExecutor, DomainError, type SqliteControlPlaneOptions } from "@secure-it/control-plane";
+import type { RequestContext } from "@secure-it/control-plane";
+
+export interface McpIdentity {
+  subject: string;
+  scopes: ReadonlySet<string>;
+  /** Token interno que identifica al llamante; undefined si es OIDC/demo. */
+  tokenId?: string;
+  isAdmin?: boolean;
+}
 
 export interface McpServerOptions {
+  identity?: McpIdentity;
+  /** @deprecated usar `identity.subject` */
   subject?: string;
+  /** @deprecated usar `identity.scopes` */
   scopes?: ReadonlySet<string>;
   controlPlane?: ControlPlane;
 }
 
 export interface ControlPlane {
-  call(
-    toolName: string,
-    rawInput: unknown,
-    context: { subject: string; scopes: ReadonlySet<string> }
-  ): Promise<JsonObject>;
+  call(toolName: string, rawInput: unknown, context: RequestContext): Promise<JsonObject>;
+}
+
+function buildSqliteControlPlane(): SqliteControlPlane {
+  const cp = new SqliteControlPlane();
+  const executor = new SshExecutor((server) => cp.resolveLoginCredential(server));
+  cp.setExecutor(executor);
+  cp.setScriptExecutor(executor);
+  return cp;
+}
+
+export function defaultControlPlane(): ControlPlane {
+  return process.env.SECUREIT_MODE === "inmemory"
+    ? new DemoControlPlane()
+    : buildSqliteControlPlane();
 }
 
 export function createMcpServer(options: McpServerOptions = {}): Server {
-  const subject = options.subject ?? "demo-local-operator";
-  const scopes = options.scopes ?? new Set(allDemoScopes);
-  const controlPlane =
-    options.controlPlane ??
-    (process.env.SECUREIT_MODE === "inmemory" ? new DemoControlPlane() : new SqliteControlPlane());
-  const visibleTools = toolsForScopes(scopes);
+  const identity: McpIdentity = options.identity ?? {
+    subject: options.subject ?? "demo-local-operator",
+    scopes: options.scopes ?? new Set(allDemoScopes)
+  };
+  const controlPlane = options.controlPlane ?? defaultControlPlane();
+
+  const visibleTools = toolsForScopes(identity.scopes);
   const server = new Server(toolCatalog.serverInfo, {
     capabilities: { tools: { listChanged: true } }
   });
@@ -61,10 +84,16 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
       return toolError("POLICY_DENIED", "La herramienta no existe o no está autorizada");
     }
     try {
+      const context: RequestContext = {
+        subject: identity.subject,
+        scopes: identity.scopes,
+        ...(identity.tokenId !== undefined ? { tokenId: identity.tokenId } : {}),
+        ...(identity.isAdmin ? { isAdmin: true } : {})
+      };
       const structuredContent = await controlPlane.call(
         tool.name,
         request.params.arguments ?? {},
-        { subject, scopes }
+        context
       );
       return {
         content: [{ type: "text", text: JSON.stringify(structuredContent) }],

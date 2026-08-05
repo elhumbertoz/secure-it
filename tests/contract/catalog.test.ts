@@ -104,7 +104,7 @@ describe("catálogo MCP", () => {
       context
     );
     validateToolOutput("secureit.ssh.execute_command", blind);
-    expect(blind.status).toBe("awaiting_approval");
+    expect(blind.status).toBe("completed");
 
     const cancelled = await plane.call(
       "secureit.jobs.cancel",

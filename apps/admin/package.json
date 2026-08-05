@@ -1,7 +1,15 @@
 {
   "name": "@secure-it/admin",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Consola administrativa local de secure-it.",
+  "license": "MIT",
+  "homepage": "https://github.com/elhumbertoz/secure-it",
+  "repository": "github:elhumbertoz/secure-it",
+  "files": ["dist", "public", "README.md", "LICENSE"],
   "type": "module",
   "main": "dist/server.js",
   "exports": {
@@ -19,5 +27,8 @@
   },
   "devDependencies": {
     "@types/express": "5.0.6"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

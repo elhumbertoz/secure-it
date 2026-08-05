@@ -1,11 +1,25 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SqliteControlPlane } from "@secure-it/control-plane";
+import { SqliteControlPlane, SshExecutor, allDemoScopesFromContracts } from "./deps.js";
 import { createMcpServer } from "./server.js";
 
 async function main(): Promise<void> {
   const controlPlane = new SqliteControlPlane();
-  const mcpServer = createMcpServer({ controlPlane });
+  const executor = new SshExecutor((server) => controlPlane.resolveLoginCredential(server));
+  controlPlane.setExecutor(executor);
+  controlPlane.setScriptExecutor(executor);
+
+  // Resuelve el token general de fallback (lo crea en el primer arranque).
+  const general = controlPlane.ensureGeneralToken();
+
+  const mcpServer = createMcpServer({
+    controlPlane,
+    identity: {
+      subject: general.subject,
+      scopes: new Set(allDemoScopesFromContracts),
+      tokenId: general.id
+    }
+  });
 
   console.error("🛡️ secure-it MCP Server activo por stdio");
   await mcpServer.connect(new StdioServerTransport());

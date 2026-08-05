@@ -9,6 +9,7 @@ import {
 } from "@secure-it/contracts";
 import { DomainError } from "./errors.js";
 import { demoActions, demoProfiles, demoServers, testServerRecord } from "./fixtures.js";
+import { type ActionExecutor, type ScriptExecutor, type ExecutionOutcome } from "./executor.js";
 import { assertSafeDemoEndpoint, sanitizeOutput, sha256 } from "./security.js";
 import type {
   AccessProfile,
@@ -50,6 +51,8 @@ const asStringArray = (value: unknown): string[] => value as string[];
 
 export interface DemoControlPlaneOptions {
   seedTestServer?: boolean;
+  executor?: ActionExecutor | null;
+  scriptExecutor?: ScriptExecutor | null;
 }
 
 export class DemoControlPlane {
@@ -59,8 +62,12 @@ export class DemoControlPlane {
   private readonly jobs = new Map<string, JobRecord>();
   private readonly idempotency = new Map<string, IdempotencyRecord>();
   private readonly auditEvents: AuditEvent[] = [];
+  private readonly executor: ActionExecutor | null;
+  private readonly scriptExecutor: ScriptExecutor | null;
 
   constructor(options: DemoControlPlaneOptions = {}) {
+    this.executor = options.executor ?? null;
+    this.scriptExecutor = options.scriptExecutor ?? null;
     for (const server of structuredClone(demoServers)) this.servers.set(server.id, server);
     if (options.seedTestServer) {
       this.servers.set(testServerRecord.id, structuredClone(testServerRecord));
@@ -186,7 +193,7 @@ export class DemoControlPlane {
     return { profiles };
   }
 
-  private addServer(input: JsonObject, context: RequestContext): JsonObject {
+  private addServer(input: JsonObject, context: RequestContext): Promise<JsonObject> {
     return this.idempotent("secureit.servers.add", input, () => {
       const name = asString(input.name);
       const connectionMode = (input.connection_mode as ServerRecord["connectionMode"] | undefined) ?? "local_agent";
@@ -273,7 +280,7 @@ export class DemoControlPlane {
     };
   }
 
-  private verifyServer(input: JsonObject, context: RequestContext): JsonObject {
+  private verifyServer(input: JsonObject, context: RequestContext): Promise<JsonObject> {
     return this.idempotent("secureit.servers.verify", input, () => {
       const server = this.requireServer(asString(input.server_id));
       if (server.lifecycleState !== "pending") {
@@ -288,7 +295,7 @@ export class DemoControlPlane {
     });
   }
 
-  private removeServer(input: JsonObject, context: RequestContext): JsonObject {
+  private removeServer(input: JsonObject, context: RequestContext): Promise<JsonObject> {
     return this.idempotent("secureit.servers.remove", input, () => {
       const serverId = asString(input.server_id);
       const server = this.requireServer(serverId);
@@ -316,8 +323,8 @@ export class DemoControlPlane {
     };
   }
 
-  private executeAction(input: JsonObject, context: RequestContext): JsonObject {
-    return this.idempotent("secureit.ssh.execute_action", input, () => {
+  private executeAction(input: JsonObject, context: RequestContext): Promise<JsonObject> {
+    return this.idempotent("secureit.ssh.execute_action", input, async () => {
       const action = this.actions.get(`${asString(input.action_id)}@${String(input.action_version)}`);
       if (!action) throw new DomainError("NOT_FOUND", "La acción o versión no existe");
       try {
@@ -339,8 +346,14 @@ export class DemoControlPlane {
         target_ids: servers.map((server) => server.id).sort(),
         requester: context.subject
       };
-      const requiresApproval = servers.some((server) => server.environment === "staging" || server.environment === "prod");
-      const job = this.createJob(requiresApproval ? "awaiting_approval" : "completed", servers, !requiresApproval);
+      // Las acciones de solo lectura (`risk: "read"`) se ejecutan directamente en
+      // cualquier ambiente autorizado; el resto requiere aprobación humana en
+      // staging/prod (no se ejecuta nada hasta aprobarse).
+      const requiresApproval =
+        action.risk !== "read" &&
+        servers.some((server) => server.environment === "staging" || server.environment === "prod");
+
+      const job = await this.runAction(action, input.parameters as Record<string, unknown>, servers, requiresApproval ? "awaiting_approval" : "completed");
       const response: JsonObject = {
         job_id: job.id,
         status: job.status,
@@ -353,8 +366,8 @@ export class DemoControlPlane {
     });
   }
 
-  private executeCommand(input: JsonObject, context: RequestContext): JsonObject {
-    return this.idempotent("secureit.ssh.execute_command", input, () => {
+  private executeCommand(input: JsonObject, context: RequestContext): Promise<JsonObject> {
+    return this.idempotent("secureit.ssh.execute_command", input, async () => {
       let serverIds = Array.isArray(input.server_ids) ? (input.server_ids as string[]) : [];
       if (serverIds.length === 0) {
         const managed = [...this.servers.values()].filter((s) => s.lifecycleState === "managed");
@@ -379,18 +392,12 @@ export class DemoControlPlane {
         requester: context.subject
       });
 
-      const reasonStr = typeof input.reason === "string" ? input.reason : "";
-      const isHighRisk =
-        input.requires_approval === true ||
-        reasonStr.toLowerCase().includes("excepcional") ||
-        /\b(rm -rf|mkfs|dd if=|shutdown|reboot|init 0)\b/i.test(scriptStr);
-      const status = isHighRisk ? "awaiting_approval" : "completed";
-      const job = this.createJob(status, servers, !isHighRisk, scriptStr);
+      const job = await this.runScript(scriptStr, servers, timeoutSeconds);
 
       const response: JsonObject = {
         job_id: job.id,
         status: job.status,
-        risk: isHighRisk ? "high" : "low",
+        risk: "low",
         script_digest: scriptDigest,
         manifest_hash: manifestHash,
         target_count: servers.length,
@@ -406,11 +413,31 @@ export class DemoControlPlane {
         }))
       };
 
-      if (isHighRisk) {
-        response.approval_request_id = randomUUID();
-      }
       return response;
     });
+  }
+
+  private async runScript(
+    script: string,
+    servers: ServerRecord[],
+    timeoutSeconds: number
+  ): Promise<JobRecord> {
+    if (this.scriptExecutor === null) {
+      return this.createJob("completed", servers, true, script);
+    }
+
+    const outcomes = await Promise.all(
+      servers.map(async (server) => {
+        try {
+          return await this.scriptExecutor!.executeScript(server, script, timeoutSeconds);
+        } catch (err) {
+          const message = err instanceof DomainError ? err.message : (err as Error).message;
+          return { stdout: "", stderr: `secure-it: ${message}`, exitCode: null, durationMs: 0 } satisfies ExecutionOutcome;
+        }
+      })
+    );
+
+    return this.createJobFromOutcomes("completed", servers, outcomes);
   }
 
   private getJob(input: JsonObject): JsonObject {
@@ -435,7 +462,7 @@ export class DemoControlPlane {
     };
   }
 
-  private cancelJob(input: JsonObject, context: RequestContext): JsonObject {
+  private cancelJob(input: JsonObject, context: RequestContext): Promise<JsonObject> {
     return this.idempotent("secureit.jobs.cancel", input, () => {
       const job = this.jobs.get(asString(input.job_id));
       if (!job) throw new DomainError("NOT_FOUND", "El trabajo no existe");
@@ -446,7 +473,7 @@ export class DemoControlPlane {
     });
   }
 
-  private rotateCredential(input: JsonObject, context: RequestContext): JsonObject {
+  private rotateCredential(input: JsonObject, context: RequestContext): Promise<JsonObject> {
     return this.idempotent("secureit.credentials.rotate", input, () => {
       const servers = this.resolveManagedServers(asStringArray(input.server_ids));
       const profile = this.requireProfile(asString(input.access_profile_id));
@@ -479,6 +506,68 @@ export class DemoControlPlane {
     };
   }
 
+  private async runAction(
+    action: ActionDefinition,
+    params: Record<string, unknown>,
+    servers: ServerRecord[],
+    status: JobRecord["status"]
+  ): Promise<JobRecord> {
+    const canExec =
+      status !== "awaiting_approval" &&
+      action.commandTemplate !== undefined &&
+      this.executor !== null;
+
+    if (!canExec) {
+      // Sin ejecutor real o accion sin commandTemplate: salida sintetica (demo original).
+      return this.createJob(status, servers, status !== "awaiting_approval");
+    }
+
+    const outcomes = await Promise.all(
+      servers.map(async (server) => {
+        try {
+          return await this.executor!.execute(server, action, params);
+        } catch (err) {
+          const message = err instanceof DomainError ? err.message : (err as Error).message;
+          return { stdout: "", stderr: `secure-it: ${message}`, exitCode: null, durationMs: 0 } satisfies ExecutionOutcome;
+        }
+      })
+    );
+
+    return this.createJobFromOutcomes(status, servers, outcomes);
+  }
+
+  private createJobFromOutcomes(
+    status: JobRecord["status"],
+    servers: ServerRecord[],
+    outcomes: ExecutionOutcome[]
+  ): JobRecord {
+    const now = new Date();
+    const expires = new Date(now.getTime() + 15 * 60 * 1000);
+    const job: JobRecord = {
+      id: randomUUID(),
+      status,
+      createdAt: now.toISOString(),
+      expiresAt: expires.toISOString(),
+      results: servers.map((server, index) => {
+        const outcome = outcomes[index] ?? { stdout: "", stderr: "secure-it: sin resultado", exitCode: null, durationMs: 0 };
+        const sanitized = sanitizeOutput(outcome.stdout, 65_536);
+        const failed = outcome.exitCode !== 0 && outcome.exitCode !== null;
+        return {
+          serverId: server.id,
+          serverAlias: server.name,
+          status: status === "completed" ? (failed ? "failed" : "completed") : status,
+          exitCode: status === "completed" ? outcome.exitCode : null,
+          stdoutExcerpt: sanitized.excerpt,
+          stderrExcerpt: outcome.stderr ? outcome.stderr.slice(0, 65_536) : null,
+          truncated: sanitized.truncated,
+          secretDetected: sanitized.secretDetected
+        };
+      })
+    };
+    this.jobs.set(job.id, job);
+    return job;
+  }
+
   private createJob(status: JobRecord["status"], servers: ServerRecord[], withOutput: boolean, customScript?: string): JobRecord {
     const now = new Date();
     const expires = new Date(now.getTime() + 15 * 60 * 1000);
@@ -506,7 +595,7 @@ export class DemoControlPlane {
     return job;
   }
 
-  private idempotent(toolName: string, input: JsonObject, create: () => JsonObject): JsonObject {
+  private async idempotent(toolName: string, input: JsonObject, create: () => JsonObject | Promise<JsonObject>): Promise<JsonObject> {
     const rawKey = typeof input.idempotency_key === "string" ? input.idempotency_key.trim() : "";
     if (!rawKey) {
       return create();
@@ -520,7 +609,7 @@ export class DemoControlPlane {
       }
       return structuredClone(existing.response);
     }
-    const response = create();
+    const response = await create();
     this.idempotency.set(compoundKey, { fingerprint, response: structuredClone(response) });
     return response;
   }

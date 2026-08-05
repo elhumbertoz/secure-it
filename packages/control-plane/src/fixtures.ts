@@ -39,29 +39,76 @@ export const demoActions: ActionDefinition[] = [
   {
     id: "os.disk_usage",
     version: 1,
-    description: "Consulta sintética del uso de un punto de montaje.",
+    description: "Uso real de disco de un punto de montaje permitido (df -h).",
     risk: "read",
-    environments: ["dev", "test"],
+    environments: ["dev", "test", "staging", "prod"],
     parameterSchema: {
       type: "object",
       additionalProperties: false,
       required: ["mountpoint"],
       properties: { mountpoint: { type: "string", enum: ["/", "/var", "/srv"] } }
     },
+    commandTemplate: "df -h {mountpoint}",
     maxTargets: 20
   },
   {
     id: "os.service_status",
     version: 1,
-    description: "Consulta sintética del estado de un servicio permitido.",
+    description: "Estado real de un servicio permitido (systemctl is-active).",
+    risk: "read",
+    environments: ["dev", "test", "staging", "prod"],
+    parameterSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["service"],
+      properties: { service: { type: "string", enum: ["nginx", "postgresql", "sshd", "ssh"] } }
+    },
+    commandTemplate: "systemctl is-active {service}",
+    maxTargets: 20
+  },
+  {
+    id: "os.uptime",
+    version: 1,
+    description: "Tiempo de actividad y carga del sistema (uptime).",
+    risk: "read",
+    environments: ["dev", "test", "staging", "prod"],
+    parameterSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {}
+    },
+    commandTemplate: "uptime",
+    maxTargets: 20
+  },
+  {
+    id: "os.memory_usage",
+    version: 1,
+    description: "Uso real de memoria (free -m).",
+    risk: "read",
+    environments: ["dev", "test", "staging", "prod"],
+    parameterSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {}
+    },
+    commandTemplate: "free -m",
+    maxTargets: 20
+  },
+  {
+    id: "os.journal_tail",
+    version: 1,
+    description:
+      "Últimas líneas del journal de un servicio (requiere sudo NOPASSWD en el remoto).",
     risk: "read",
     environments: ["dev", "test"],
     parameterSchema: {
       type: "object",
       additionalProperties: false,
       required: ["service"],
-      properties: { service: { type: "string", enum: ["nginx", "postgresql", "sshd"] } }
+      properties: { service: { type: "string", enum: ["nginx", "postgresql", "sshd", "ssh"] } }
     },
-    maxTargets: 20
+    commandTemplate: "journalctl -u {service} -n 50 --no-pager",
+    elevatedPrivilege: true,
+    maxTargets: 5
   }
 ];

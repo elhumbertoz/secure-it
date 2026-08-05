@@ -96,6 +96,8 @@ Edita tu archivo `claude_desktop_config.json`:
 }
 ```
 
+*Esto descarga e instala automáticamente la última versión publicada de `@secure-it/mcp` desde npm (cero porcelain/setup: solo Node.js ≥ 22). Ver [Publicación en npm](#-publicar-en-npm) si necesitas publicarla en tu propio registry.*
+
 *Si estás desarrollando localmente en este repositorio:*
 
 ```json
@@ -128,7 +130,23 @@ Una vez guardada la configuración, abre tu cliente de IA y prueba estos prompts
 💬 "Muestra el estado de enrolamiento del nuevo servidor."
 ```
 
-*Al ejecutar cualquier comando, `secure-it` creará automáticamente la base de datos persistente SQLite en `~/.secure-it/secureit.db` sin requerir ninguna acción adicional.*
+Antes del primer arranque persistente, configura secretos aleatorios desde tu
+gestor de secretos (no los guardes en el repositorio):
+
+```bash
+export SECUREIT_ADMIN_PASSWORD='una-clave-aleatoria-de-al-menos-12-caracteres'
+export SECUREIT_MASTER_KEY='una-clave-maestra-aleatoria-de-al-menos-32-bytes'
+```
+
+`secure-it` creará automáticamente la base de datos persistente SQLite una sola vez, en una ubicación compartida del host para que **todas las instancias** (CLI, admin web y servidores MCP) vean el mismo inventario, credenciales y auditoría:
+
+| Plataforma | Ruta por defecto |
+| :--- | :--- |
+| Windows | `%APPDATA%\secure-it\secureit.db` |
+| macOS | `~/Library/Application Support/secure-it/secureit.db` |
+| Linux / otros | `${XDG_DATA_HOME:-~/.local/share}/secure-it/secureit.db` |
+
+*Instalaciones anteriores siguen usando `~/.secure-it/secureit.db` (backward-compat). Para forzar una ruta distinta define `SECUREIT_DB_PATH=/ruta/absoluta.db`. El contenido de las credenciales se cifra siempre con AES-256-GCM (`SECUREIT_MASTER_KEY`).*
 
 ---
 
@@ -138,7 +156,7 @@ Si tus servidores hoy usan **usuario y contraseña** (credencial heredada), tamb
 puedes usar `secure-it`: la contraseña se importa una sola vez por la consola
 humana y nunca viaja por el chat.
 
-Guía paso a paso ([docs/11-guia-alta-servidores.md](file:///opt/source/secure-it/docs/11-guia-alta-servidores.md)):
+Guía paso a paso ([docs/11-guia-alta-servidores.md](docs/11-guia-alta-servidores.md)):
 
 1. **Consola humana (Web en `http://127.0.0.1:4000`)** → importa la clave o contraseña SSH (vía interfaz web o `POST /api/credentials`).
 2. **Agente (MCP)** → registra el servidor con `secureit.servers.add` (sin credenciales).
@@ -148,6 +166,31 @@ Guía paso a paso ([docs/11-guia-alta-servidores.md](file:///opt/source/secure-i
 
 > Recomendado: tras el alta, rota y migra a `ssh_cert` o identidad de carga para
 > eliminar la dependencia de la contraseña estática.
+
+---
+
+### 📦 Publicar en npm
+
+Antes de publicar, ejecuta la puerta de release completa. Esta compila, prueba,
+audita las dependencias e instala los tarballs en un proyecto aislado:
+
+```bash
+npm run release:verify
+```
+
+Como existen dependencias entre workspaces, publícalos en orden desde las hojas:
+
+```bash
+# desde la raíz del repo, ya con dist/ compilado (npm run build)
+npm publish -w @secure-it/contracts --access public
+npm publish -w @secure-it/control-plane --access public
+npm publish -w @secure-it/admin --access public
+npm publish -w @secure-it/mcp --access public
+```
+
+> Cada paquete limita explícitamente sus archivos publicados. La consola incluye
+> `public/`; todos incluyen su README y licencia.
+> Para usar un registry distinto: `npm publish --registry=https://npm.pkg.github.com`.
 
 ---
 
@@ -237,7 +280,7 @@ npm ci
 # 3. Compilar los paquetes TypeScript (contracts, control-plane, mcp)
 npm run build
 
-# 4. Correr la suite completa de tests e integración (30 tests)
+# 4. Correr la suite completa de tests e integración
 npm run check
 
 # 5. Ejecutar el servidor MCP en modo Stdio local

@@ -33,7 +33,7 @@ describe("SqliteControlPlane (Zero-DB persistence)", () => {
     const dbPath = join(tmpdir(), `test-secureit-${randomUUID()}.db`);
     try {
       // Instancia 1: Añadir servidor
-      const cp1 = new SqliteControlPlane({ dbPath });
+      const cp1 = new SqliteControlPlane({ dbPath, adminPassword: "test-bootstrap-password" });
       const addResult = await cp1.call(
         "secureit.servers.add",
         {

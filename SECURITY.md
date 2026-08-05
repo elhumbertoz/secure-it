@@ -1,5 +1,13 @@
 # Política de seguridad
 
+## Estado y uso previsto
+
+La versión 0.1.x debe considerarse preliminar. Use datos sintéticos en demos y
+complete una revisión de seguridad independiente antes de conectarla a sistemas
+de producción. El bootstrap de una base persistente exige
+`SECUREIT_ADMIN_PASSWORD` y el almacenamiento de credenciales exige
+`SECUREIT_MASTER_KEY`; ambos valores deben proceder de un gestor de secretos.
+
 ## No use secretos reales en la demostración
 
 La implementación actual usa exclusivamente datos sintéticos y rangos reservados

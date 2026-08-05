@@ -1,13 +1,23 @@
 {
   "name": "@secure-it/control-plane",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Plano de control, persistencia cifrada y ejecución SSH para secure-it.",
+  "license": "MIT",
+  "homepage": "https://github.com/elhumbertoz/secure-it",
+  "repository": "github:elhumbertoz/secure-it",
+  "files": ["dist", "README.md", "LICENSE"],
   "type": "module",
   "exports": {
     ".": "./dist/index.js"
   },
   "types": "./dist/index.d.ts",
+  "engines": { "node": ">=22.0.0" },
   "dependencies": {
-    "@secure-it/contracts": "0.1.0"
+    "@secure-it/contracts": "0.1.0",
+    "ssh2": "^1.17.0"
   }
 }

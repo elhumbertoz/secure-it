@@ -1,653 +1,480 @@
 (function () {
-  let adminToken = localStorage.getItem("secureit_admin_token") || "";
+  let sessionToken = localStorage.getItem("secureit_session") || "";
+  let username = "";
   let serversCache = [];
   let credentialsCache = [];
   let auditCache = [];
-  let revealTimerInterval = null;
-  let currentRevealingCredId = null;
+  let tokensCache = [];
+  let generalTokenId = null;
+  let revealTimer = null;
+  let revealingCred = null;
 
-  // DOM Elements
-  const tokenInput = document.getElementById("admin-token-input");
-  const btnSaveToken = document.getElementById("btn-save-token");
-  const btnOpenAddServer = document.getElementById("btn-open-add-server");
-  const btnOpenImport = document.getElementById("btn-open-import");
-  const btnRefresh = document.getElementById("btn-refresh");
+  const $ = (id) => document.getElementById(id);
 
-  // Tabs
+  const loginScreen = $("login-screen");
+  const appMain = $("app-main");
+  const loginForm = $("login-form");
+  const loginUser = $("login-user");
+  const loginPass = $("login-pass");
+
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabViews = document.querySelectorAll(".tab-view");
 
-  // Servers DOM
-  const searchServers = document.getElementById("search-servers");
-  const filterServerEnv = document.getElementById("filter-server-env");
-  const filterServerState = document.getElementById("filter-server-state");
-  const tbodyServers = document.getElementById("servers-tbody");
-
-  // Credentials DOM
-  const searchCreds = document.getElementById("search-creds");
-  const filterCredEnv = document.getElementById("filter-cred-env");
-  const filterCredType = document.getElementById("filter-cred-type");
-  const tbodyCreds = document.getElementById("credentials-tbody");
-
-  // Audit DOM
-  const searchAudit = document.getElementById("search-audit");
-  const tbodyAudit = document.getElementById("audit-tbody");
-
-  // Stats DOM
-  const statServers = document.getElementById("stat-servers");
-  const statTotal = document.getElementById("stat-total");
-  const statActive = document.getElementById("stat-active");
-  const statRotated = document.getElementById("stat-rotated");
-  const statAudit = document.getElementById("stat-audit");
-
-  // Modals DOM
-  const modalAddServer = document.getElementById("modal-add-server");
-  const btnCloseAddServer = document.getElementById("btn-close-add-server");
-  const btnCancelAddServer = document.getElementById("btn-cancel-add-server");
-  const formAddServer = document.getElementById("form-add-server");
-
-  const modalImport = document.getElementById("modal-import");
-  const btnCloseImport = document.getElementById("btn-close-import");
-  const btnCancelImport = document.getElementById("btn-cancel-import");
-  const formImport = document.getElementById("form-import");
-
-  const modalReveal = document.getElementById("modal-reveal");
-  const btnCloseReveal = document.getElementById("btn-close-reveal");
-  const btnFinishReveal = document.getElementById("btn-finish-reveal");
-  const revealReason = document.getElementById("reveal-reason");
-  const btnConfirmReveal = document.getElementById("btn-confirm-reveal");
-  const secretBox = document.getElementById("reveal-secret-box");
-  const revealTimer = document.getElementById("reveal-timer");
-  const revealSecretText = document.getElementById("reveal-secret-text");
-  const btnCopySecret = document.getElementById("btn-copy-secret");
-  const btnHideSecret = document.getElementById("btn-hide-secret");
-
-  const toast = document.getElementById("toast");
-
-  // Init Token
-  if (adminToken) {
-    tokenInput.value = adminToken;
-  } else {
-    fetch("/api/auth/token")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.token) {
-          adminToken = data.token;
-          tokenInput.value = adminToken;
-          loadAllData();
-        }
-      })
-      .catch(() => {});
-  }
-
-  // Event Listeners - Save Token & Refresh
-  btnSaveToken.addEventListener("click", () => {
-    adminToken = tokenInput.value.trim();
-    localStorage.setItem("secureit_admin_token", adminToken);
-    showToast("Token de administración guardado", "success");
-    loadAllData();
-  });
-
-  btnRefresh.addEventListener("click", () => loadAllData());
-
-  // Tab Switcher
-  tabBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      tabBtns.forEach((b) => b.classList.remove("active"));
-      tabViews.forEach((v) => v.classList.remove("active"));
-
-      btn.classList.add("active");
-      const targetId = `tab-view-${btn.dataset.tab}`;
-      const targetView = document.getElementById(targetId);
-      if (targetView) targetView.classList.add("active");
-    });
-  });
-
-  // Filter Listeners
-  searchServers.addEventListener("input", () => renderServers());
-  filterServerEnv.addEventListener("change", () => renderServers());
-  filterServerState.addEventListener("change", () => renderServers());
-
-  searchCreds.addEventListener("input", () => renderCredentials());
-  filterCredEnv.addEventListener("change", () => renderCredentials());
-  filterCredType.addEventListener("change", () => renderCredentials());
-
-  searchAudit.addEventListener("input", () => renderAudit());
-
-  // Modals Listeners
-  btnOpenAddServer.addEventListener("click", () => showModal(modalAddServer));
-  btnCloseAddServer.addEventListener("click", () => hideModal(modalAddServer));
-  btnCancelAddServer.addEventListener("click", () => hideModal(modalAddServer));
-  formAddServer.addEventListener("submit", handleAddServerSubmit);
-
-  btnOpenImport.addEventListener("click", () => showModal(modalImport));
-  btnCloseImport.addEventListener("click", () => hideModal(modalImport));
-  btnCancelImport.addEventListener("click", () => hideModal(modalImport));
-  formImport.addEventListener("submit", handleImportSubmit);
-
-  btnCloseReveal.addEventListener("click", () => closeRevealModal());
-  btnFinishReveal.addEventListener("click", () => closeRevealModal());
-  btnConfirmReveal.addEventListener("click", handleConfirmReveal);
-  btnHideSecret.addEventListener("click", () => hideSecretBox());
-  btnCopySecret.addEventListener("click", handleCopySecret);
-
-  // Initial Load
-  loadAllData();
-
-  // API Call Helper
-  async function apiCall(endpoint, method = "GET", body = null) {
+  async function apiCall(endpoint, method = "GET", body = null, opts = {}) {
     const headers = { "Content-Type": "application/json" };
-    if (adminToken) headers["X-Admin-Token"] = adminToken;
-
-    const opts = { method, headers };
-    if (body) opts.body = JSON.stringify(body);
-
-    const res = await fetch(endpoint, opts);
-    const json = await res.json();
-
+    if (sessionToken) headers["X-Admin-Token"] = sessionToken;
+    const fetchOpts = { method, headers };
+    if (body) fetchOpts.body = JSON.stringify(body);
+    const res = await fetch(endpoint, fetchOpts);
+    let json = null;
+    try { json = await res.json(); } catch { json = {}; }
     if (!res.ok) {
+      if (res.status === 401 && !opts.allowAuthRetry) {
+        showLogin();
+      }
       throw new Error(json.message || json.error || `HTTP ${res.status}`);
     }
     return json;
   }
 
-  // Loaders
-  async function loadAllData() {
+  function showLogin() {
+    sessionToken = "";
+    localStorage.removeItem("secureit_session");
+    loginScreen.classList.remove("hidden");
+    appMain.classList.add("hidden");
+    loginUser.value = "";
+    loginPass.value = "";
+    loginUser.focus();
+  }
+
+  function showApp() {
+    loginScreen.classList.add("hidden");
+    appMain.classList.remove("hidden");
+    $("account-user").textContent = username;
+    loadAllData();
+  }
+
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
     try {
-      const [serversRes, credsRes, auditsRes] = await Promise.all([
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUser.value.trim(), password: loginPass.value })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.message || "Credenciales inválidas", "error"); return; }
+      sessionToken = data.session_token;
+      username = data.username;
+      localStorage.setItem("secureit_session", sessionToken);
+      showApp();
+    } catch (err) { showToast(err.message, "error"); }
+  });
+
+  $("btn-logout").addEventListener("click", async () => {
+    try { await apiCall("/api/auth/logout", "POST", {}, { allowAuthRetry: true }); } catch {}
+    showLogin();
+  });
+
+  $("btn-account").addEventListener("click", () => showModal($("modal-account")));
+  $("btn-close-account").addEventListener("click", () => hideModal($("modal-account")));
+  $("btn-cancel-account").addEventListener("click", () => hideModal($("modal-account")));
+  $("form-password").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cur = $("pw-current").value, nw = $("pw-new").value, cf = $("pw-confirm").value;
+    if (nw !== cf) { showToast("Las contraseñas nuevas no coinciden", "error"); return; }
+    try {
+      await apiCall("/api/auth/change-password", "POST", { current_password: cur, new_password: nw });
+      showToast("Contraseña actualizada", "success");
+      hideModal($("modal-account"));
+      $("form-password").reset();
+    } catch (err) { showToast(err.message, "error"); }
+  });
+
+  $("btn-refresh").addEventListener("click", () => loadAllData());
+  tabBtns.forEach((btn) => btn.addEventListener("click", () => {
+    tabBtns.forEach((b) => b.classList.remove("active"));
+    tabViews.forEach((v) => v.classList.remove("active"));
+    btn.classList.add("active");
+    const v = document.getElementById(`tab-view-${btn.dataset.tab}`);
+    if (v) v.classList.add("active");
+  }));
+
+  // Filters
+  $("search-servers").addEventListener("input", renderServers);
+  $("filter-server-env").addEventListener("change", renderServers);
+  $("filter-server-state").addEventListener("change", renderServers);
+  $("search-creds").addEventListener("input", renderCredentials);
+  $("filter-cred-env").addEventListener("change", renderCredentials);
+  $("filter-cred-type").addEventListener("change", renderCredentials);
+  $("search-tokens").addEventListener("input", renderTokens);
+  $("search-audit").addEventListener("input", renderAudit);
+
+  // Modals wiring
+  wireModal("modal-add-server", "btn-open-add-server", "btn-close-add-server", "btn-cancel-add-server", "form-add-server", handleAddServer);
+  wireModal("modal-import", "btn-open-import", "btn-close-import", "btn-cancel-import", "form-import", handleImport);
+  wireModal("modal-token", "btn-open-token", "btn-close-token", "btn-cancel-token", "form-token", handleCreateToken);
+
+  $("btn-copy-token").addEventListener("click", () => copyText($("token-raw-text").textContent, "Token copiado"));
+  $("btn-add-grant").addEventListener("click", handleAddGrant);
+  $("btn-close-grants").addEventListener("click", () => hideModal($("modal-grants")));
+  $("btn-finish-grants").addEventListener("click", () => hideModal($("modal-grants")));
+
+  // Reveal modal
+  $("btn-close-reveal").addEventListener("click", closeRevealModal);
+  $("btn-finish-reveal").addEventListener("click", closeRevealModal);
+  $("btn-confirm-reveal").addEventListener("click", handleConfirmReveal);
+  $("btn-hide-secret").addEventListener("click", hideSecretBox);
+  $("btn-copy-secret").addEventListener("click", () => copyText($("reveal-secret-text").textContent, "Secreto copiado"));
+
+  function wireModal(modalId, openBtn, closeBtn, cancelBtn, formId, onSubmit) {
+    const modal = $(modalId);
+    $(openBtn).addEventListener("click", () => showModal(modal));
+    $(closeBtn).addEventListener("click", () => hideModal(modal));
+    $(cancelBtn).addEventListener("click", () => hideModal(modal));
+    if (formId && onSubmit) $(formId).addEventListener("submit", (e) => { e.preventDefault(); onSubmit(modal); });
+  }
+
+  function showModal(el) { el.classList.remove("hidden"); }
+  function hideModal(el) { el.classList.add("hidden"); }
+
+  function copyText(text, msg) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => showToast(msg, "success"));
+  }
+
+  // ── Init auth state ──
+  (async function init() {
+    if (!sessionToken) { showLogin(); return; }
+    try {
+      const me = await apiCall("/api/auth/me", "GET", null, { allowAuthRetry: true });
+      username = me.username || "admin";
+      showApp();
+    } catch { showLogin(); }
+  })();
+
+  async function loadAllData() {
+    if (!sessionToken) return;
+    try {
+      const [servers, creds, audits, tokensData] = await Promise.all([
         apiCall("/api/servers"),
         apiCall("/api/credentials"),
-        apiCall("/api/audit-events")
+        apiCall("/api/audit-events"),
+        apiCall("/api/tokens").catch(() => ({ tokens: [], general_id: null }))
       ]);
-
-      serversCache = serversRes.servers || [];
-      credentialsCache = credsRes || [];
-      auditCache = auditsRes || [];
-
-      renderServers();
-      renderCredentials();
-      renderAudit();
-      updateStats();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+      serversCache = (servers && servers.servers) ? servers.servers : (servers || []);
+      credentialsCache = creds || [];
+      auditCache = audits || [];
+      tokensCache = (tokensData && tokensData.tokens) || [];
+      generalTokenId = (tokensData && tokensData.general_id) || null;
+      renderServers(); renderCredentials(); renderTokens(); renderAudit(); updateStats();
+    } catch (err) { showToast(err.message, "error"); }
   }
 
   function updateStats() {
-    statServers.textContent = String(serversCache.length);
-    statTotal.textContent = String(credentialsCache.length);
-    statActive.textContent = String(credentialsCache.filter((c) => c.status === "active").length);
-    statRotated.textContent = String(credentialsCache.filter((c) => c.status === "rotated").length);
-    statAudit.textContent = String(auditCache.length);
+    $("stat-servers").textContent = String(serversCache.length);
+    $("stat-total").textContent = String(credentialsCache.length);
+    $("stat-active").textContent = String(credentialsCache.filter((c) => c.status === "active").length);
+    $("stat-rotated").textContent = String(credentialsCache.filter((c) => c.status === "rotated").length);
+    $("stat-tokens").textContent = String(tokensCache.filter((t) => t.active).length);
+    $("stat-audit").textContent = String(auditCache.length);
   }
 
-  // 1. Render Servers
+  // ── RENDER: Servers ──
   function renderServers() {
-    tbodyServers.replaceChildren();
-
-    const q = searchServers.value.toLowerCase().trim();
-    const env = filterServerEnv.value;
-    const state = filterServerState.value;
-
+    const tbody = $("servers-tbody"); tbody.replaceChildren();
+    const q = $("search-servers").value.toLowerCase().trim();
+    const env = $("filter-server-env").value, state = $("filter-server-state").value;
     const filtered = serversCache.filter((s) => {
       if (env && s.environment !== env) return false;
       if (state && s.lifecycleState !== state) return false;
       if (q) {
-        const nameMatch = s.name.toLowerCase().includes(q);
-        const addrMatch = (s.endpoint?.address || "").toLowerCase().includes(q);
-        if (!nameMatch && !addrMatch) return false;
+        const ok = s.name.toLowerCase().includes(q) || (s.endpoint?.address || "").toLowerCase().includes(q);
+        if (!ok) return false;
       }
       return true;
     });
-
-    if (filtered.length === 0) {
+    if (filtered.length === 0) { emptyRow(tbody, 8, "No hay servidores."); return; }
+    filtered.forEach((s) => {
       const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.setAttribute("colspan", "8");
-      td.style.textAlign = "center";
-      td.style.color = "var(--text-muted)";
-      td.style.padding = "2rem";
-      td.textContent = "No hay servidores registrados que coincidan con la búsqueda.";
-      tr.appendChild(td);
-      tbodyServers.appendChild(tr);
-      return;
-    }
-
-    filtered.forEach((srv) => {
-      const tr = document.createElement("tr");
-
-      // Name
-      const tdName = document.createElement("td");
-      const strongName = document.createElement("strong");
-      strongName.textContent = srv.name;
-      tdName.appendChild(strongName);
-      tr.appendChild(tdName);
-
-      // Endpoint
-      const tdEndpoint = document.createElement("td");
-      const epText = srv.endpoint ? `${srv.endpoint.address}:${srv.endpoint.port}` : "-";
-      tdEndpoint.textContent = epText;
-      tr.appendChild(tdEndpoint);
-
-      // Connection Mode
-      const tdMode = document.createElement("td");
-      const badgeMode = document.createElement("span");
-      badgeMode.className = "badge info";
-      badgeMode.textContent = srv.connectionMode;
-      tdMode.appendChild(badgeMode);
-      tr.appendChild(tdMode);
-
-      // Environment
-      const tdEnv = document.createElement("td");
-      const badgeEnv = document.createElement("span");
-      badgeEnv.className = "badge " + (srv.environment === "prod" ? "danger" : "warning");
-      badgeEnv.textContent = srv.environment;
-      tdEnv.appendChild(badgeEnv);
-      tr.appendChild(tdEnv);
-
-      // Owner
-      const tdOwner = document.createElement("td");
-      tdOwner.textContent = srv.owner || "admin";
-      tr.appendChild(tdOwner);
-
-      // Criticality
-      const tdCrit = document.createElement("td");
-      const badgeCrit = document.createElement("span");
-      badgeCrit.className = "badge " + (srv.criticality === "critical" || srv.criticality === "high" ? "danger" : "secondary");
-      badgeCrit.textContent = srv.criticality;
-      tdCrit.appendChild(badgeCrit);
-      tr.appendChild(tdCrit);
-
-      // State
-      const tdState = document.createElement("td");
-      const stateDot = document.createElement("span");
-      stateDot.className = "status-dot " + (srv.lifecycleState === "managed" ? "green" : "yellow");
-      const stateText = document.createElement("span");
-      stateText.style.marginLeft = "0.4rem";
-      stateText.textContent = srv.lifecycleState;
-      tdState.appendChild(stateDot);
-      tdState.appendChild(stateText);
-      tr.appendChild(tdState);
-
-      // Actions
-      const tdActions = document.createElement("td");
-      tdActions.style.textAlign = "right";
-      const btnRemove = document.createElement("button");
-      btnRemove.className = "btn btn-danger btn-sm";
-      btnRemove.textContent = "🗑️ Eliminar";
-      btnRemove.addEventListener("click", () => handleRemoveServer(srv.id));
-      tdActions.appendChild(btnRemove);
-      tr.appendChild(tdActions);
-
-      tbodyServers.appendChild(tr);
+      tr.appendChild(tdStrong(s.name));
+      tr.appendChild(tdText(s.endpoint ? `${s.endpoint.address}:${s.endpoint.port}` : "-"));
+      tr.appendChild(tdBadge(s.connectionMode, "info"));
+      tr.appendChild(tdBadge(s.environment, s.environment === "prod" ? "danger" : "warning"));
+      tr.appendChild(tdText(s.owner || "admin")));
+      tr.appendChild(tdText(tokenLabel(s.ownerTokenId)));
+      const stTd = document.createElement("td");
+      const dot = document.createElement("span");
+      dot.className = "status-dot " + (s.lifecycleState === "managed" ? "green" : "yellow");
+      const txt = document.createElement("span"); txt.style.marginLeft = "0.4rem"; txt.textContent = s.lifecycleState;
+      stTd.appendChild(dot); stTd.appendChild(txt); tr.appendChild(stTd);
+      const ac = document.createElement("td"); ac.style.textAlign = "right";
+      const acts = document.createElement("div"); acts.className = "actions-cell";
+      const bPerm = document.createElement("button"); bPerm.className = "btn btn-secondary btn-sm"; bPerm.textContent = "🔓 Permisos";
+      bPerm.addEventListener("click", () => openGrantsModal(s));
+      acts.appendChild(bPerm);
+      const bDel = document.createElement("button"); bDel.className = "btn btn-danger btn-sm"; bDel.textContent = "🗑️";
+      bDel.addEventListener("click", () => handleRemoveServer(s.id));
+      acts.appendChild(bDel);
+      ac.appendChild(acts); tr.appendChild(ac);
+      tbody.appendChild(tr);
     });
   }
 
-  // 2. Render Credentials
+  function tokenLabel(tokenId) {
+    if (!tokenId) return "—";
+    const t = tokensCache.find((x) => x.id === tokenId);
+    return t ? t.name : tokenId.slice(0, 8);
+  }
+
+  // ── RENDER: Credentials ──
   function renderCredentials() {
-    tbodyCreds.replaceChildren();
-
-    const q = searchCreds.value.toLowerCase().trim();
-    const env = filterCredEnv.value;
-    const type = filterCredType.value;
-
+    const tbody = $("credentials-tbody"); tbody.replaceChildren();
+    const q = $("search-creds").value.toLowerCase().trim();
+    const env = $("filter-cred-env").value, type = $("filter-cred-type").value;
     const filtered = credentialsCache.filter((c) => {
       if (env && c.environment !== env) return false;
       if (type && c.type !== type) return false;
-      if (q) {
-        const aliasMatch = c.alias.toLowerCase().includes(q);
-        const ownerMatch = c.owner.toLowerCase().includes(q);
-        if (!aliasMatch && !ownerMatch) return false;
-      }
+      if (q) { if (!(c.alias.toLowerCase().includes(q) || c.owner.toLowerCase().includes(q))) return false; }
       return true;
     });
-
-    if (filtered.length === 0) {
+    if (filtered.length === 0) { emptyRow(tbody, 9, "No hay credenciales."); return; }
+    filtered.forEach((c) => {
       const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.setAttribute("colspan", "9");
-      td.style.textAlign = "center";
-      td.style.color = "var(--text-muted)";
-      td.style.padding = "2rem";
-      td.textContent = "No hay credenciales registradas que coincidan.";
-      tr.appendChild(td);
-      tbodyCreds.appendChild(tr);
-      return;
-    }
-
-    filtered.forEach((cred) => {
-      const tr = document.createElement("tr");
-
-      // Alias
-      const tdAlias = document.createElement("td");
-      const strongAlias = document.createElement("strong");
-      strongAlias.textContent = cred.alias;
-      tdAlias.appendChild(strongAlias);
-      tr.appendChild(tdAlias);
-
-      // Type
-      const tdType = document.createElement("td");
-      const badgeType = document.createElement("span");
-      badgeType.className = "badge info";
-      badgeType.textContent = cred.type;
-      tdType.appendChild(badgeType);
-      tr.appendChild(tdType);
-
-      // Owner
-      const tdOwner = document.createElement("td");
-      tdOwner.textContent = cred.owner;
-      tr.appendChild(tdOwner);
-
-      // Env
-      const tdEnv = document.createElement("td");
-      const badgeEnv = document.createElement("span");
-      badgeEnv.className = "badge " + (cred.environment === "prod" ? "danger" : "warning");
-      badgeEnv.textContent = cred.environment;
-      tdEnv.appendChild(badgeEnv);
-      tr.appendChild(tdEnv);
-
-      // Status
-      const tdStatus = document.createElement("td");
-      const badgeStatus = document.createElement("span");
-      badgeStatus.className = "badge " + (cred.status === "active" ? "success" : cred.status === "rotated" ? "warning" : "danger");
-      badgeStatus.textContent = cred.status;
-      tdStatus.appendChild(badgeStatus);
-      tr.appendChild(tdStatus);
-
-      // Version
-      const tdVersion = document.createElement("td");
-      tdVersion.textContent = `v${cred.version}`;
-      tr.appendChild(tdVersion);
-
-      // Last Rotated
-      const tdRotated = document.createElement("td");
-      tdRotated.textContent = cred.lastRotatedAt ? new Date(cred.lastRotatedAt).toLocaleString() : "-";
-      tr.appendChild(tdRotated);
-
-      // Exportable
-      const tdExport = document.createElement("td");
-      const badgeExport = document.createElement("span");
-      badgeExport.className = "badge " + (cred.exportable ? "purple" : "secondary");
-      badgeExport.textContent = cred.exportable ? "Exportable" : "No Exportable";
-      tdExport.appendChild(badgeExport);
-      tr.appendChild(tdExport);
-
-      // Actions
-      const tdActions = document.createElement("td");
-      tdActions.style.textAlign = "right";
-      const actionsDiv = document.createElement("div");
-      actionsDiv.className = "actions-cell";
-
-      if (cred.exportable) {
-        const btnReveal = document.createElement("button");
-        btnReveal.className = "btn btn-warning btn-sm";
-        btnReveal.textContent = "👁️ Revelar";
-        btnReveal.addEventListener("click", () => openRevealModal(cred.id));
-        actionsDiv.appendChild(btnReveal);
-      }
-
-      const btnRotate = document.createElement("button");
-      btnRotate.className = "btn btn-primary btn-sm";
-      btnRotate.textContent = "🔄 Rotar";
-      btnRotate.addEventListener("click", () => handleRotate(cred.id));
-      actionsDiv.appendChild(btnRotate);
-
-      const btnTest = document.createElement("button");
-      btnTest.className = "btn btn-secondary btn-sm";
-      btnTest.textContent = "🧪 Probar";
-      btnTest.addEventListener("click", () => handleTest(cred.id));
-      actionsDiv.appendChild(btnTest);
-
-      if (cred.status !== "revoked") {
-        const btnRevoke = document.createElement("button");
-        btnRevoke.className = "btn btn-danger btn-sm";
-        btnRevoke.textContent = "🚫 Revocar";
-        btnRevoke.addEventListener("click", () => handleRevoke(cred.id));
-        actionsDiv.appendChild(btnRevoke);
-      }
-
-      tdActions.appendChild(actionsDiv);
-      tr.appendChild(tdActions);
-
-      tbodyCreds.appendChild(tr);
+      tr.appendChild(tdStrong(c.alias));
+      tr.appendChild(tdBadge(c.type, "info"));
+      tr.appendChild(tdText(c.owner));
+      tr.appendChild(tdBadge(c.environment, c.environment === "prod" ? "danger" : "warning"));
+      tr.appendChild(tdBadge(c.status, c.status === "active" ? "success" : c.status === "rotated" ? "warning" : "danger"));
+      tr.appendChild(tdText(`v${c.version}`));
+      tr.appendChild(tdText(c.lastRotatedAt ? new Date(c.lastRotatedAt).toLocaleString() : "-"));
+      tr.appendChild(tdBadge(c.exportable ? "Exportable" : "No exp.", c.exportable ? "purple" : "secondary"));
+      const ac = document.createElement("td"); ac.style.textAlign = "right";
+      const acts = document.createElement("div"); acts.className = "actions-cell";
+      if (c.exportable) { const b = btn("👁️", "warning", () => openRevealModal(c.id)); acts.appendChild(b); }
+      acts.appendChild(btn("🔄", "primary", () => handleRotate(c.id)));
+      acts.appendChild(btn("🧪", "secondary", () => handleTest(c.id)));
+      if (c.status !== "revoked") acts.appendChild(btn("🚫", "danger", () => handleRevoke(c.id)));
+      ac.appendChild(acts); tr.appendChild(ac);
+      tbody.appendChild(tr);
     });
   }
 
-  // 3. Render Audit
+  // ── RENDER: Tokens ──
+  function renderTokens() {
+    const tbody = $("tokens-tbody"); tbody.replaceChildren();
+    const q = $("search-tokens").value.toLowerCase().trim();
+    const filtered = tokensCache.filter((t) => !q || t.name.toLowerCase().includes(q));
+    if (filtered.length === 0) { emptyRow(tbody, 6, "No hay tokens. Crea uno con + Crear Token."); return; }
+    filtered.forEach((t) => {
+      const tr = document.createElement("tr");
+      tr.appendChild(tdStrong(t.name));
+      tr.appendChild(tdText(t.subject || "—"));
+      tr.appendChild(tdBadge(t.is_general ? "general" : "session", t.is_general ? "purple" : "info"));
+      tr.appendChild(tdBadge(t.active ? "activo" : "inactivo", t.active ? "success" : "secondary"));
+      tr.appendChild(tdText(t.created_at ? new Date(t.created_at).toLocaleString() : "-"));
+      const ac = document.createElement("td"); ac.style.textAlign = "right";
+      if (!t.is_general) {
+        const acts = document.createElement("div"); acts.className = "actions-cell";
+        acts.appendChild(btn(t.active ? "⏸️" : "▶️", "secondary", () => handleToggleToken(t)));
+        acts.appendChild(btn("🗑️", "danger", () => handleDeleteToken(t)));
+        ac.appendChild(acts);
+      } else {
+        const fixed = document.createElement("span"); fixed.className = "badge secondary"; fixed.textContent = "fijo";
+        ac.appendChild(fixed);
+      }
+      tr.appendChild(ac);
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── RENDER: Audit ──
   function renderAudit() {
-    tbodyAudit.replaceChildren();
-
-    const q = searchAudit.value.toLowerCase().trim();
-
-    const filtered = auditCache.filter((a) => {
-      if (!q) return true;
-      const opMatch = (a.operation || "").toLowerCase().includes(q);
-      const subMatch = (a.subject || "").toLowerCase().includes(q);
-      const reasonMatch = (a.reasonCode || "").toLowerCase().includes(q);
-      return opMatch || subMatch || reasonMatch;
-    });
-
-    if (filtered.length === 0) {
+    const tbody = $("audit-tbody"); tbody.replaceChildren();
+    const q = $("search-audit").value.toLowerCase().trim();
+    const filtered = auditCache.filter((a) => !q || (a.operation||"").toLowerCase().includes(q) || (a.subject||"").toLowerCase().includes(q) || (a.reasonCode||"").toLowerCase().includes(q));
+    if (filtered.length === 0) { emptyRow(tbody, 6, "No hay eventos."); return; }
+    [...filtered].reverse().slice(0, 50).forEach((ev) => {
       const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.setAttribute("colspan", "6");
-      td.style.textAlign = "center";
-      td.style.color = "var(--text-muted)";
-      td.style.padding = "1.5rem";
-      td.textContent = "No hay eventos de auditoría que coincidan.";
-      tr.appendChild(td);
-      tbodyAudit.appendChild(tr);
-      return;
-    }
-
-    const sorted = [...filtered].reverse().slice(0, 30);
-
-    sorted.forEach((event) => {
-      const tr = document.createElement("tr");
-
-      const tdTime = document.createElement("td");
-      tdTime.textContent = new Date(event.occurredAt).toLocaleString();
-      tr.appendChild(tdTime);
-
-      const tdOp = document.createElement("td");
-      const badgeOp = document.createElement("span");
-      badgeOp.className = "badge " + (event.operation.includes("reveal") ? "warning" : "info");
-      badgeOp.textContent = event.operation;
-      tdOp.appendChild(badgeOp);
-      tr.appendChild(tdOp);
-
-      const tdSub = document.createElement("td");
-      tdSub.textContent = event.subject;
-      tr.appendChild(tdSub);
-
-      const tdOutcome = document.createElement("td");
-      const badgeOutcome = document.createElement("span");
-      badgeOutcome.className = "badge " + (event.outcome === "allowed" ? "success" : "danger");
-      badgeOutcome.textContent = event.outcome;
-      tdOutcome.appendChild(badgeOutcome);
-      tr.appendChild(tdOutcome);
-
-      const tdObjs = document.createElement("td");
-      tdObjs.textContent = (event.objectIds || []).join(", ") || "-";
-      tr.appendChild(tdObjs);
-
-      const tdReason = document.createElement("td");
-      tdReason.textContent = event.reasonCode;
-      tr.appendChild(tdReason);
-
-      tbodyAudit.appendChild(tr);
+      tr.appendChild(tdText(new Date(ev.occurredAt).toLocaleString()));
+      tr.appendChild(tdBadge(ev.operation, ev.operation.includes("reveal") ? "warning" : "info"));
+      tr.appendChild(tdText(ev.subject));
+      tr.appendChild(tdBadge(ev.outcome, ev.outcome === "allowed" ? "success" : "danger"));
+      tr.appendChild(tdText((ev.objectIds || []).join(", ") || "-"));
+      tr.appendChild(tdText(ev.reasonCode));
+      tbody.appendChild(tr);
     });
   }
 
-  // Handlers - Add Server
-  async function handleAddServerSubmit(e) {
-    e.preventDefault();
-    const name = document.getElementById("server-name").value.trim();
-    const username = document.getElementById("server-username").value.trim();
-    const password = document.getElementById("server-password").value.trim();
-    const environment = document.getElementById("server-env").value;
-    const owner = document.getElementById("server-owner").value.trim() || "admin";
-
-    const payload = { name, environment, owner };
-    if (username) payload.username = username;
-    if (password) payload.password = password;
-
+  // ── Handlers ──
+  async function handleAddServer(modal) {
+    const payload = {
+      name: $("server-name").value.trim(),
+      environment: $("server-env").value,
+      owner: $("server-owner").value.trim() || "admin"
+    };
+    const u = $("server-username").value.trim(), p = $("server-password").value.trim();
+    if (u) payload.username = u; if (p) payload.password = p;
     try {
       await apiCall("/api/servers", "POST", payload);
-      showToast(`Servidor '${name}' registrado con éxito`, "success");
-      formAddServer.reset();
-      hideModal(modalAddServer);
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+      showToast("Servidor registrado", "success");
+      $("form-add-server").reset(); hideModal(modal); loadAllData();
+    } catch (err) { showToast(err.message, "error"); }
   }
 
   async function handleRemoveServer(id) {
-    if (!confirm("¿Estás seguro de eliminar este servidor de la infraestructura?")) return;
-    try {
-      await apiCall(`/api/servers/${id}`, "DELETE");
-      showToast("Servidor eliminado", "success");
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+    if (!confirm("¿Eliminar este servidor?")) return;
+    try { await apiCall(`/api/servers/${id}`, "DELETE"); showToast("Eliminado", "success"); loadAllData(); }
+    catch (err) { showToast(err.message, "error"); }
   }
 
-  // Handlers - Import Credential
-  async function handleImportSubmit(e) {
-    e.preventDefault();
-    const alias = document.getElementById("import-alias").value.trim();
-    const type = document.getElementById("import-type").value;
-    const owner = document.getElementById("import-owner").value.trim();
-    const environment = document.getElementById("import-env").value;
-    const exportable = document.getElementById("import-exportable").checked;
-    const secretValue = document.getElementById("import-secret").value.trim();
-
+  async function handleImport(modal) {
+    const payload = {
+      alias: $("import-alias").value.trim(),
+      type: $("import-type").value,
+      owner: $("import-owner").value.trim(),
+      environment: $("import-env").value,
+      exportable: $("import-exportable").checked,
+      secretValue: $("import-secret").value.trim()
+    };
     try {
-      await apiCall("/api/credentials", "POST", {
-        alias,
-        type,
-        owner,
-        environment,
-        exportable,
-        secretValue
+      await apiCall("/api/credentials", "POST", payload);
+      showToast("Credencial guardada", "success");
+      $("form-import").reset(); hideModal(modal); loadAllData();
+    } catch (err) { showToast(err.message, "error"); }
+  }
+
+  async function handleCreateToken(modal) {
+    const name = $("token-name").value.trim();
+    if (!name) { showToast("Indica un nombre", "error"); return; }
+    try {
+      const res = await apiCall("/api/tokens", "POST", { name });
+      $("token-raw-text").textContent = res.raw_token || "";
+      $("token-raw-box").classList.remove("hidden");
+      showToast("Token creado. Cópioalo ahora.", "success");
+      $("token-name").value = "";
+      loadAllData();
+    } catch (err) { showToast(err.message, "error"); }
+  }
+
+  async function handleToggleToken(t) {
+    try { await apiCall(`/api/tokens/${t.id}`, "PATCH", { active: !t.active }); showToast(t.active ? "Token desactivado" : "Token activado", "success"); loadAllData(); }
+    catch (err) { showToast(err.message, "error"); }
+  }
+
+  async function handleDeleteToken(t) {
+    if (!confirm(`¿Eliminar el token '${t.name}'? Los servidores que agregó quedarán sin dueño accesible solo por el admin.`)) return;
+    try { await apiCall(`/api/tokens/${t.id}`, "DELETE"); showToast("Token eliminado", "success"); loadAllData(); }
+    catch (err) { showToast(err.message, "error"); }
+  }
+
+  // ── Grants modal ──
+  let currentGrantsServer = null;
+  async function openGrantsModal(server) {
+    currentGrantsServer = server;
+    $("grants-server-name").textContent = `${server.name} (${server.environment})`;
+    showModal($("modal-grants"));
+    try {
+      const data = await apiCall(`/api/servers/${server.id}/grants`);
+      // poblar select con todos los tokens (incluye general)
+      const sel = $("grant-token-select"); sel.replaceChildren();
+      data.tokens.forEach((t) => {
+        const opt = document.createElement("option"); opt.value = t.id;
+        opt.textContent = `${t.name}${t.active ? "" : " (inactivo)"}`;
+        sel.appendChild(opt);
       });
+      renderGrants(data.grants);
+    } catch (err) { showToast(err.message, "error"); }
+  }
 
-      showToast(`Credencial '${alias}' guardada exitosamente`, "success");
-      formImport.reset();
-      hideModal(modalImport);
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
+  function renderGrants(grants) {
+    const tbody = $("grants-tbody"); tbody.replaceChildren();
+    if (currentGrantsServer) {
+      const ownerTr = document.createElement("tr");
+      ownerTr.appendChild(tdText(tokenLabel(currentGrantsServer.ownerTokenId) + " (dueño)"));
+      ownerTr.appendChild(tdBadge("dueño", "purple"));
+      ownerTr.appendChild(tdText("—")); ownerTr.appendChild(tdText(""));
+      tbody.appendChild(ownerTr);
     }
-  }
-
-  async function handleRotate(id) {
-    if (!confirm("¿Confirmas la rotación ciega de la credencial?")) return;
-    try {
-      await apiCall(`/api/credentials/${id}/rotate`, "POST");
-      showToast("Credencial rotada con éxito", "success");
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }
-
-  async function handleRevoke(id) {
-    if (!confirm("¿Estás seguro de revocar esta credencial?")) return;
-    try {
-      await apiCall(`/api/credentials/${id}/revoke`, "POST");
-      showToast("Credencial revocada", "success");
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }
-
-  async function handleTest(id) {
-    try {
-      const res = await apiCall(`/api/credentials/${id}/test`, "POST");
-      if (res.ok) {
-        showToast("Prueba de acceso OK (sin exponer secreto)", "success");
-        loadAllData();
-      }
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }
-
-  // Reveal Modal
-  function openRevealModal(id) {
-    currentRevealingCredId = id;
-    revealReason.value = "";
-    hideSecretBox();
-    showModal(modalReveal);
-  }
-
-  function closeRevealModal() {
-    hideSecretBox();
-    hideModal(modalReveal);
-    currentRevealingCredId = null;
-  }
-
-  async function handleConfirmReveal() {
-    if (!currentRevealingCredId) return;
-    const reason = revealReason.value.trim();
-    if (!reason) {
-      alert("Por favor especifica un motivo de revelado para la auditoría.");
-      return;
-    }
-
-    try {
-      const res = await apiCall(`/api/credentials/${currentRevealingCredId}/reveal`, "POST", { reason });
-      revealSecretText.textContent = res.secretValue;
-      secretBox.classList.remove("hidden");
-      startRevealTimer(15);
-      loadAllData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }
-
-  function startRevealTimer(seconds) {
-    if (revealTimerInterval) clearInterval(revealTimerInterval);
-    let remaining = seconds;
-    revealTimer.textContent = `Auto-ocultado en ${remaining}s`;
-
-    revealTimerInterval = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        hideSecretBox();
-      } else {
-        revealTimer.textContent = `Auto-ocultado en ${remaining}s`;
-      }
-    }, 1000);
-  }
-
-  function hideSecretBox() {
-    if (revealTimerInterval) clearInterval(revealTimerInterval);
-    revealSecretText.textContent = "";
-    secretBox.classList.add("hidden");
-  }
-
-  function handleCopySecret() {
-    const text = revealSecretText.textContent;
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      showToast("Secreto copiado al portapapeles.", "success");
+    if (!grants || grants.length === 0) { emptyRow(tbody, 4, "Sin permisos extendidos."); return; }
+    grants.forEach((g) => {
+      const tr = document.createElement("tr");
+      tr.appendChild(tdText(tokenLabel(g.tokenId)));
+      tr.appendChild(tdText("extendido"));
+      tr.appendChild(tdText(g.grantedBy || "—"));
+      const ac = tdText(""); ac.style.textAlign = "right";
+      const b = btn("✕", "danger", () => handleRevokeGrant(g.tokenId));
+      ac.replaceChildren(b); tr.appendChild(ac);
+      tbody.appendChild(tr);
     });
   }
 
-  // Modal Helpers
-  function showModal(el) { el.classList.remove("hidden"); }
-  function hideModal(el) { el.classList.add("hidden"); }
+  async function handleAddGrant() {
+    if (!currentGrantsServer) return;
+    const tokenId = $("grant-token-select").value;
+    if (!tokenId) return;
+    try {
+      await apiCall(`/api/servers/${currentGrantsServer.id}/grants`, "POST", { token_id: tokenId });
+      showToast("Permiso concedido", "success");
+      const data = await apiCall(`/api/servers/${currentGrantsServer.id}/grants`);
+      renderGrants(data.grants);
+    } catch (err) { showToast(err.message, "error"); }
+  }
+
+  async function handleRevokeGrant(tokenId) {
+    if (!currentGrantsServer) return;
+    try {
+      await apiCall(`/api/servers/${currentGrantsServer.id}/grants/${tokenId}`, "DELETE");
+      showToast("Permiso revocado", "success");
+      const data = await apiCall(`/api/servers/${currentGrantsServer.id}/grants`);
+      renderGrants(data.grants);
+    } catch (err) { showToast(err.message, "error"); }
+  }
+
+  // ── Credential actions ──
+  async function handleRotate(id) {
+    if (!confirm("¿Rotar credencial?")) return;
+    try { await apiCall(`/api/credentials/${id}/rotate`, "POST"); showToast("Rotada", "success"); loadAllData(); }
+    catch (err) { showToast(err.message, "error"); }
+  }
+  async function handleRevoke(id) {
+    if (!confirm("¿Revocar credencial?")) return;
+    try { await apiCall(`/api/credentials/${id}/revoke`, "POST"); showToast("Revocada", "success"); loadAllData(); }
+    catch (err) { showToast(err.message, "error"); }
+  }
+  async function handleTest(id) {
+    try { const r = await apiCall(`/api/credentials/${id}/test`, "POST"); if (r.ok) showToast("Prueba OK", "success"); }
+    catch (err) { showToast(err.message, "error"); }
+  }
+  function openRevealModal(id) { revealingCred = id; $("reveal-reason").value = ""; hideSecretBox(); showModal($("modal-reveal")); }
+  function closeRevealModal() { hideSecretBox(); hideModal($("modal-reveal")); revealingCred = null; }
+  async function handleConfirmReveal() {
+    if (!revealingCred) return;
+    const reason = $("reveal-reason").value.trim();
+    if (!reason) { alert("Especifica un motivo."); return; }
+    try {
+      const res = await apiCall(`/api/credentials/${revealingCred}/reveal`, "POST", { reason });
+      $("reveal-secret-text").textContent = res.secretValue;
+      $("reveal-secret-box").classList.remove("hidden");
+      startRevealTimer(15);
+    } catch (err) { showToast(err.message, "error"); }
+  }
+  function startRevealTimer(s) {
+    if (revealTimer) clearInterval(revealTimer);
+    let r = s; $("reveal-timer").textContent = `${r}s`;
+    revealTimer = setInterval(() => { r -= 1; if (r <= 0) hideSecretBox(); else $("reveal-timer").textContent = `${r}s`; }, 1000);
+  }
+  function hideSecretBox() { if (revealTimer) clearInterval(revealTimer); $("reveal-secret-text").textContent = ""; $("reveal-secret-box").classList.add("hidden"); }
+
+  // ── DOM helpers ──
+  function tdText(text) { const td = document.createElement("td"); td.textContent = text ?? ""; return td; }
+  function tdStrong(text) { const td = document.createElement("td"); const s = document.createElement("strong"); s.textContent = text; td.appendChild(s); return td; }
+  function tdBadge(text, cls) { const td = document.createElement("td"); const b = document.createElement("span"); b.className = `badge ${cls}`; b.textContent = text; td.appendChild(b); return td; }
+  function btn(label, cls, onClick) { const b = document.createElement("button"); b.className = `btn btn-${cls} btn-sm`; b.textContent = label; b.addEventListener("click", onClick); return b; }
+  function emptyRow(tbody, span, msg) { const tr = document.createElement("tr"); const td = document.createElement("td"); td.setAttribute("colspan", String(span)); td.style.textAlign = "center"; td.style.color = "var(--text-muted)"; td.style.padding = "1.5rem"; td.textContent = msg; tr.appendChild(td); tbody.appendChild(tr); }
 
   function showToast(msg, type = "info") {
-    toast.textContent = msg;
-    toast.className = `toast ${type}`;
-    setTimeout(() => {
-      toast.className = "toast hidden";
-    }, 3500);
+    const t = $("toast"); t.textContent = msg; t.className = `toast ${type}`;
+    setTimeout(() => { t.className = "toast hidden"; }, 3500);
   }
 })();

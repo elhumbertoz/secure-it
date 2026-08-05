@@ -1,6 +1,6 @@
 import type { Server as NodeHttpServer } from "node:http";
 import { allDemoScopes } from "@secure-it/contracts";
-import { DemoControlPlane } from "@secure-it/control-plane";
+import { DemoControlPlane, isInternalToken, type TokenRecord } from "@secure-it/control-plane";
 import {
   getOAuthProtectedResourceMetadataUrl,
   mcpAuthMetadataRouter
@@ -22,7 +22,7 @@ import express, {
 import { rateLimit } from "express-rate-limit";
 import { OidcJwtVerifier } from "./auth.js";
 import type { HttpServerConfig } from "./config.js";
-import { createMcpServer, type ControlPlane } from "./server.js";
+import { createMcpServer, type ControlPlane, type McpIdentity } from "./server.js";
 
 export interface HttpAppOptions {
   config: HttpServerConfig;
@@ -109,7 +109,40 @@ export function createHttpMcpApp(options: HttpAppOptions): Express {
       .set("Access-Control-Max-Age", "600")
       .end();
   });
-  app.use("/mcp", originProtection, limiter, bearerAuth, supportedScope);
+
+  // Resolución de identidad: session-token interno prioritario; si no, OIDC.
+  const resolveIdentity: RequestHandler = (request, response, next) => {
+    const raw = extractInternalToken(request);
+    if (raw !== null) {
+      const token = resolveInternalToken(controlPlane, raw);
+      if (!token) {
+        response.status(401).set("WWW-Authenticate", 'Bearer error="invalid_token"').json({ error: "invalid_token" });
+        return;
+      }
+      const scopes = token.scopes.length > 0 ? new Set(token.scopes) : new Set(allDemoScopes);
+      if (![...scopes].some((scope) => knownScopes.has(scope))) {
+        response.status(403).set("WWW-Authenticate", 'Bearer error="insufficient_scope"').json({ error: "insufficient_scope" });
+        return;
+      }
+      (request as Request & { mcpIdentity?: McpIdentity }).mcpIdentity = {
+        subject: token.subject,
+        scopes,
+        tokenId: token.id
+      };
+      next();
+      return;
+    }
+    // Sin token interno → verificación OIDC (respaldo HTTP) como hasta ahora.
+    bearerAuth(request, response, (err: unknown) => {
+      if (err) {
+        next(err);
+        return;
+      }
+      supportedScope(request, response, next);
+    });
+  };
+
+  app.use("/mcp", originProtection, limiter, resolveIdentity);
   app.post(
     "/mcp",
     requireJsonContentType,
@@ -141,16 +174,30 @@ async function handleMcpPost(
   response: Response,
   controlPlane: ControlPlane
 ): Promise<void> {
-  const auth = request.auth;
-  const subject = auth?.extra?.subject;
-  if (!auth || typeof subject !== "string" || subject.length === 0) {
-    response.status(401).json({ error: "invalid_token" });
-    return;
+  const internalIdentity = (request as Request & { mcpIdentity?: McpIdentity }).mcpIdentity;
+  let subject: string;
+  let scopes: ReadonlySet<string>;
+  let tokenId: string | undefined;
+
+  if (internalIdentity) {
+    subject = internalIdentity.subject;
+    scopes = internalIdentity.scopes;
+    tokenId = internalIdentity.tokenId;
+  } else {
+    const auth = request.auth;
+    subject = (auth?.extra?.subject as string | undefined) ?? "";
+    if (!auth || typeof subject !== "string" || subject.length === 0) {
+      response.status(401).json({ error: "invalid_token" });
+      return;
+    }
+    scopes = new Set(auth.scopes);
+    delete request.auth;
   }
 
-  const scopes = new Set(auth.scopes);
-  delete request.auth;
-  const server = createMcpServer({ subject, scopes, controlPlane });
+  const server = createMcpServer({
+    controlPlane,
+    identity: { subject, scopes, ...(tokenId !== undefined ? { tokenId } : {}) }
+  });
   const transport = new StreamableHTTPServerTransport({
     enableJsonResponse: true
   });
@@ -176,6 +223,25 @@ async function handleMcpPost(
       });
     }
   }
+}
+
+function extractInternalToken(request: Request): string | null {
+  const header = request.headers["x-session-token"];
+  if (typeof header === "string" && header.length > 0) return header;
+  const auth = request.headers.authorization;
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
+    const candidate = auth.slice(7).trim();
+    if (isInternalToken(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolveInternalToken(controlPlane: ControlPlane, raw: string): TokenRecord | null {
+  const cp = controlPlane as unknown as { resolveTokenFromRaw?: (r: string) => TokenRecord | null };
+  if (typeof cp.resolveTokenFromRaw === "function") {
+    return cp.resolveTokenFromRaw(raw);
+  }
+  return null;
 }
 
 function allowedOrigin(allowedOrigins: readonly string[]): RequestHandler {

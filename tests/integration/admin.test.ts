@@ -3,7 +3,6 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { SqliteControlPlane } from "@secure-it/control-plane";
 import { createAdminServer } from "../../apps/admin/src/server.js";
-import { getAdminToken } from "../../apps/admin/src/auth.js";
 
 const closeables: Array<{ close(): void | Promise<void> }> = [];
 
@@ -14,7 +13,6 @@ afterEach(async () => {
 async function startAdminServer(): Promise<{ baseUrl: string; token: string; controlPlane: SqliteControlPlane }> {
   const controlPlane = new SqliteControlPlane({ inMemory: true, seedTestServer: true });
   const { app } = createAdminServer({ controlPlane });
-  const token = getAdminToken();
 
   const server: NodeHttpServer = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
@@ -29,7 +27,17 @@ async function startAdminServer(): Promise<{ baseUrl: string; token: string; con
   });
 
   const address = server.address() as AddressInfo;
-  return { baseUrl: `http://127.0.0.1:${address.port}`, token, controlPlane };
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  // Login con el usuario por defecto admin/admin (creado en el arranque).
+  const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "admin" })
+  });
+  const loginBody = await loginRes.json() as { session_token: string };
+  const token = loginBody.session_token;
+
+  return { baseUrl, token, controlPlane };
 }
 
 describe("Interfaz Administrativa Web de Credenciales", () => {
