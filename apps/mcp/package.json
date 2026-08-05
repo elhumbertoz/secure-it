@@ -1,26 +1,38 @@
 {
   "name": "@secure-it/mcp",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.0",
   "type": "module",
   "description": "Servidor MCP (Model Context Protocol) para operar infraestructura sin exponer credenciales al agente de IA.",
   "license": "MIT",
-  "keywords": ["mcp", "ssh", "infra", "secrets", "ai", "claude", "cursor"],
+  "keywords": [
+    "mcp",
+    "ssh",
+    "infra",
+    "secrets",
+    "ai",
+    "claude",
+    "cursor"
+  ],
   "homepage": "https://github.com/elhumbertoz/secure-it",
   "repository": "github:elhumbertoz/secure-it",
   "private": false,
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "secure-it-mcp": "dist/index.js",
     "secure-it": "dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@secure-it/admin": "0.1.0",
-    "@secure-it/contracts": "0.1.0",
-    "@secure-it/control-plane": "0.1.0",
+    "@secure-it/admin": "0.1.0-beta.0",
+    "@secure-it/contracts": "0.1.0-beta.0",
+    "@secure-it/control-plane": "0.1.0-beta.0",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1",
     "jose": "6.2.4"

@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/contracts",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -9,7 +9,12 @@
   "license": "MIT",
   "homepage": "https://github.com/elhumbertoz/secure-it",
   "repository": "github:elhumbertoz/secure-it",
-  "files": ["dist", "spec", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "spec",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "prepack": "node ../../scripts/sync-contract-catalog.mjs"
   },
@@ -18,7 +23,9 @@
     ".": "./dist/index.js"
   },
   "types": "./dist/index.d.ts",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
