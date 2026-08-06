@@ -10,8 +10,20 @@
   <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-  <div class="app-container">
-    <!-- Header -->
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen">
+    <form id="login-form" class="login-card">
+      <div class="brand-logo big">🛡️</div>
+      <h2>secure-it Admin</h2>
+      <p class="subtitle" id="login-message">Inicia sesión para administrar servidores, credenciales y tokens.</p>
+      <input type="text" id="login-user" placeholder="Usuario" autocomplete="username" required>
+      <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password" required>
+      <button type="submit" id="login-submit" class="btn btn-primary full-width">Entrar</button>
+      <p class="login-hint" id="login-hint">La primera vez crearás aquí tu cuenta administrativa.</p>
+    </form>
+  </div>
+
+  <div class="app-container hidden" id="app-main">
     <header class="app-header">
       <div class="brand">
         <div class="brand-logo">
@@ -19,331 +31,209 @@
         </div>
         <div class="brand-title">
           <h1>secure-it <span class="badge-pill">Admin</span></h1>
-          <p class="subtitle">Plano de Control Zero-Trust para Servidores & Credenciales</p>
+          <p class="subtitle">Plano de Control Zero-Trust</p>
         </div>
       </div>
-
       <div class="header-actions">
-        <div class="token-input-group">
-          <input type="password" id="admin-token-input" placeholder="Token Admin..." autocomplete="off">
-          <button id="btn-save-token" class="btn btn-secondary btn-sm">Guardar</button>
+        <div class="account-box">
+          <span id="account-user" class="account-user"></span>
+          <button id="btn-account" class="btn btn-secondary btn-sm">Cuenta</button>
+          <button id="btn-logout" class="btn btn-danger btn-sm">Salir</button>
         </div>
         <div class="action-buttons">
-          <button id="btn-open-add-server" class="btn btn-primary">
-            <span>+</span> Servidor
-          </button>
-          <button id="btn-open-import" class="btn btn-secondary">
-            <span>+</span> Credencial
-          </button>
+          <button id="btn-open-add-server" class="btn btn-primary">+ Servidor</button>
+          <button id="btn-open-import" class="btn btn-secondary">+ Credencial</button>
         </div>
       </div>
     </header>
 
-    <!-- Metrics Bar -->
     <section class="metrics-bar">
-      <div class="metric-chip active-chip" id="chip-servers">
-        <span class="chip-icon">🖥️</span>
-        <span class="chip-label">Servidores:</span>
-        <strong id="stat-servers">0</strong>
-      </div>
-      <div class="metric-chip">
-        <span class="chip-icon">🔑</span>
-        <span class="chip-label">Credenciales:</span>
-        <strong id="stat-total">0</strong>
-      </div>
-      <div class="metric-chip">
-        <span class="chip-icon">✅</span>
-        <span class="chip-label">Activas:</span>
-        <strong id="stat-active">0</strong>
-      </div>
-      <div class="metric-chip">
-        <span class="chip-icon">🔄</span>
-        <span class="chip-label">Rotadas:</span>
-        <strong id="stat-rotated">0</strong>
-      </div>
-      <div class="metric-chip">
-        <span class="chip-icon">📜</span>
-        <span class="chip-label">Auditoría:</span>
-        <strong id="stat-audit">0</strong>
-      </div>
+      <div class="metric-chip active-chip"><span class="chip-icon">🖥️</span><span class="chip-label">Servidores:</span><strong id="stat-servers">0</strong></div>
+      <div class="metric-chip"><span class="chip-icon">🔑</span><span class="chip-label">Credenciales:</span><strong id="stat-total">0</strong></div>
+      <div class="metric-chip"><span class="chip-icon">✅</span><span class="chip-label">Activas:</span><strong id="stat-active">0</strong></div>
+      <div class="metric-chip"><span class="chip-icon">🔄</span><span class="chip-label">Rotadas:</span><strong id="stat-rotated">0</strong></div>
+      <div class="metric-chip"><span class="chip-icon">🎫</span><span class="chip-label">Tokens:</span><strong id="stat-tokens">0</strong></div>
+      <div class="metric-chip"><span class="chip-icon">📜</span><span class="chip-label">Auditoría:</span><strong id="stat-audit">0</strong></div>
     </section>
 
-    <!-- Navigation Tabs -->
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="servers">
-        <span class="tab-icon">🖥️</span> Servidores
-      </button>
-      <button class="tab-btn" data-tab="credentials">
-        <span class="tab-icon">🔑</span> Credenciales
-      </button>
-      <button class="tab-btn" data-tab="audit">
-        <span class="tab-icon">📜</span> Auditoría
-      </button>
-
+      <button class="tab-btn active" data-tab="servers">🖥️ Servidores</button>
+      <button class="tab-btn" data-tab="credentials">🔑 Credenciales</button>
+      <button class="tab-btn" data-tab="tokens">🎫 Tokens &amp; Permisos</button>
+      <button class="tab-btn" data-tab="audit">📜 Auditoría</button>
       <div class="tabs-right-controls">
-        <button id="btn-refresh" class="btn btn-icon" title="Actualizar datos">
-          <span>🔄</span>
-        </button>
+        <button id="btn-refresh" class="btn btn-icon" title="Actualizar">🔄</button>
       </div>
     </nav>
 
-    <!-- Main View: SERVERS TAB -->
+    <!-- SERVIDORES -->
     <div id="tab-view-servers" class="tab-view active">
       <section class="controls-bar">
-        <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-servers" placeholder="Buscar por nombre o endpoint...">
-        </div>
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" id="search-servers" placeholder="Buscar por nombre o endpoint..."></div>
         <div class="filters-group">
-          <select id="filter-server-env">
-            <option value="">Todos los Ambientes</option>
-            <option value="prod">Producción (prod)</option>
-            <option value="staging">Staging</option>
-            <option value="dev">Desarrollo</option>
-            <option value="test">Test</option>
-          </select>
-          <select id="filter-server-state">
-            <option value="">Todos los Estados</option>
-            <option value="managed">Managed (Activos)</option>
-            <option value="pending">Pending (Pendientes)</option>
-          </select>
+          <select id="filter-server-env"><option value="">Todos los Ambientes</option><option value="prod">Producción</option><option value="staging">Staging</option><option value="dev">Desarrollo</option><option value="test">Test</option></select>
+          <select id="filter-server-state"><option value="">Todos los Estados</option><option value="managed">Managed</option><option value="pending">Pending</option></select>
         </div>
       </section>
-
       <main class="table-container">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th>Nombre / Host</th>
-              <th>Endpoint / Puerto</th>
-              <th>Modo Conexión</th>
-              <th>Ambiente</th>
-              <th>Propietario</th>
-              <th>Criticidad</th>
-              <th>Estado</th>
-              <th style="text-align: right;">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="servers-tbody">
-            <!-- Rendered via JS -->
-          </tbody>
+          <thead><tr><th>Nombre / Host</th><th>Endpoint</th><th>Modo</th><th>Ambiente</th><th>Propietario</th><th>Token Dueño</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
+          <tbody id="servers-tbody"></tbody>
         </table>
       </main>
     </div>
 
-    <!-- Main View: CREDENTIALS TAB -->
+    <!-- CREDENCIALES -->
     <div id="tab-view-credentials" class="tab-view">
       <section class="controls-bar">
-        <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-creds" placeholder="Buscar por alias o propietario...">
-        </div>
+        <div class="search-box"><span class="search-icon">🔍</span><input type="text" id="search-creds" placeholder="Buscar por alias o propietario..."></div>
         <div class="filters-group">
-          <select id="filter-cred-env">
-            <option value="">Todos los Ambientes</option>
-            <option value="prod">Producción (prod)</option>
-            <option value="staging">Staging</option>
-            <option value="dev">Desarrollo</option>
-            <option value="test">Test</option>
-          </select>
-          <select id="filter-cred-type">
-            <option value="">Todos los Tipos</option>
-            <option value="ssh_key">Clave SSH</option>
-            <option value="db_password">Contraseña DB</option>
-            <option value="api_token">Token API</option>
-            <option value="ca_private_key">Clave CA Privada</option>
-          </select>
+          <select id="filter-cred-env"><option value="">Todos los Ambientes</option><option value="prod">Producción</option><option value="staging">Staging</option><option value="dev">Desarrollo</option><option value="test">Test</option></select>
+          <select id="filter-cred-type"><option value="">Todos los Tipos</option><option value="ssh_key">Clave SSH</option><option value="db_password">Contraseña DB</option><option value="api_token">Token API</option><option value="ca_private_key">Clave CA</option></select>
         </div>
       </section>
-
       <main class="table-container">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th>Alias / Identificador</th>
-              <th>Tipo</th>
-              <th>Propietario</th>
-              <th>Ambiente</th>
-              <th>Estado</th>
-              <th>Versión</th>
-              <th>Última Rotación</th>
-              <th>Exportable</th>
-              <th style="text-align: right;">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="credentials-tbody">
-            <!-- Rendered via JS -->
-          </tbody>
+          <thead><tr><th>Alias</th><th>Tipo</th><th>Propietario</th><th>Ambiente</th><th>Estado</th><th>Versión</th><th>Última Rotación</th><th>Exportable</th><th style="text-align:right;">Acciones</th></tr></thead>
+          <tbody id="credentials-tbody"></tbody>
         </table>
       </main>
     </div>
 
-    <!-- Main View: AUDIT TAB -->
-    <div id="tab-view-audit" class="tab-view">
+    <!-- TOKENS -->
+    <div id="tab-view-tokens" class="tab-view">
       <section class="controls-bar">
-        <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-audit" placeholder="Buscar en logs de auditoría...">
-        </div>
+        <div class="search-box"><span class="search-icon">🎫</span><input type="text" id="search-tokens" placeholder="Buscar token por nombre..."></div>
+        <button id="btn-open-token" class="btn btn-primary">+ Crear Token</button>
       </section>
-
+      <div class="alert info">
+        Los <strong>session-tokens</strong> aíslan servidores: un servidor agregado con un token solo es accesible por ese token desde el MCP. El <strong>token general</strong> es el fallback cuando no se presenta uno. Aquí puedes extender el permiso de cualquier token a servidores de otros tokens.
+      </div>
       <main class="table-container">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th>Fecha / Hora (ISO)</th>
-              <th>Operación</th>
-              <th>Sujeto</th>
-              <th>Resultado</th>
-              <th>Objetos Afectados</th>
-              <th>Razón / Código</th>
-            </tr>
-          </thead>
-          <tbody id="audit-tbody">
-            <!-- Rendered via JS -->
-          </tbody>
+          <thead><tr><th>Nombre</th><th>Sujeto</th><th>Tipo</th><th>Estado</th><th>Creado</th><th style="text-align:right;">Acciones</th></tr></thead>
+          <tbody id="tokens-tbody"></tbody>
+        </table>
+      </main>
+    </div>
+
+    <!-- AUDITORÍA -->
+    <div id="tab-view-audit" class="tab-view">
+      <section class="controls-bar"><div class="search-box"><span class="search-icon">🔍</span><input type="text" id="search-audit" placeholder="Buscar en logs..."></div></section>
+      <main class="table-container">
+        <table class="data-table">
+          <thead><tr><th>Fecha/Hora</th><th>Operación</th><th>Sujeto</th><th>Resultado</th><th>Objetos</th><th>Razón</th></tr></thead>
+          <tbody id="audit-tbody"></tbody>
         </table>
       </main>
     </div>
   </div>
 
-  <!-- Modal 1: Add Server -->
+  <!-- Modal: Add Server -->
   <div id="modal-add-server" class="modal-backdrop hidden">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3>🖥️ Registrar Servidor</h3>
-        <button id="btn-close-add-server" class="btn-close">&times;</button>
-      </div>
+      <div class="modal-header"><h3>🖥️ Registrar Servidor</h3><button id="btn-close-add-server" class="btn-close">&times;</button></div>
       <form id="form-add-server" class="modal-body">
-        <div class="form-group">
-          <label for="server-name">Nombre / Host IP *</label>
-          <input type="text" id="server-name" required placeholder="ej. web-prod-01 o api.aisolutionshub.ec">
+        <div class="form-group"><label for="server-name">Nombre / Host IP *</label><input type="text" id="server-name" required placeholder="ej. web-prod-01"></div>
+        <div class="form-row">
+          <div class="form-group flex-1"><label for="server-username">Usuario SSH</label><input type="text" id="server-username" placeholder="root, ubuntu"></div>
+          <div class="form-group flex-1"><label for="server-password">Contraseña SSH</label><input type="password" id="server-password" placeholder="Opcional"></div>
         </div>
         <div class="form-row">
-          <div class="form-group flex-1">
-            <label for="server-username">Usuario SSH</label>
-            <input type="text" id="server-username" placeholder="ej. root, ubuntu">
-          </div>
-          <div class="form-group flex-1">
-            <label for="server-password">Contraseña SSH</label>
-            <input type="password" id="server-password" placeholder="Opcional. Auto-guarda credencial">
-          </div>
+          <div class="form-group flex-1"><label for="server-env">Ambiente</label><select id="server-env"><option value="prod">Producción</option><option value="staging">Staging</option><option value="dev">Desarrollo</option><option value="test">Test</option></select></div>
+          <div class="form-group flex-1"><label for="server-owner">Propietario</label><input type="text" id="server-owner" value="admin"></div>
         </div>
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label for="server-env">Ambiente</label>
-            <select id="server-env">
-              <option value="prod">Producción (prod)</option>
-              <option value="staging">Staging</option>
-              <option value="dev">Desarrollo</option>
-              <option value="test">Test</option>
-            </select>
-          </div>
-          <div class="form-group flex-1">
-            <label for="server-owner">Propietario</label>
-            <input type="text" id="server-owner" value="admin">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" id="btn-cancel-add-server" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Registrar Servidor</button>
-        </div>
+        <div class="modal-footer"><button type="button" id="btn-cancel-add-server" class="btn btn-secondary">Cancelar</button><button type="submit" class="btn btn-primary">Registrar</button></div>
       </form>
     </div>
   </div>
 
-  <!-- Modal 2: Import Credential -->
+  <!-- Modal: Import Cred -->
   <div id="modal-import" class="modal-backdrop hidden">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3>🔑 Importar Credencial</h3>
-        <button id="btn-close-import" class="btn-close">&times;</button>
-      </div>
+      <div class="modal-header"><h3>🔑 Importar Credencial</h3><button id="btn-close-import" class="btn-close">&times;</button></div>
       <form id="form-import" class="modal-body">
-        <div class="form-group">
-          <label for="import-alias">Alias Único *</label>
-          <input type="text" id="import-alias" required placeholder="ej. postgres-prod-cluster">
-        </div>
+        <div class="form-group"><label for="import-alias">Alias Único *</label><input type="text" id="import-alias" required placeholder="ej. postgres-prod-cluster"></div>
         <div class="form-row">
-          <div class="form-group flex-1">
-            <label for="import-type">Tipo *</label>
-            <select id="import-type" required>
-              <option value="ssh_key">Llave SSH (ssh_key)</option>
-              <option value="db_password">Contraseña DB (db_password)</option>
-              <option value="api_token">Token API (api_token)</option>
-              <option value="ca_private_key">Clave Privada CA (ca_private_key)</option>
-            </select>
-          </div>
-          <div class="form-group flex-1">
-            <label for="import-env">Ambiente *</label>
-            <select id="import-env" required>
-              <option value="prod">Producción (prod)</option>
-              <option value="staging">Staging</option>
-              <option value="dev">Desarrollo</option>
-              <option value="test">Test</option>
-            </select>
-          </div>
+          <div class="form-group flex-1"><label for="import-type">Tipo *</label><select id="import-type" required><option value="ssh_key">SSH</option><option value="db_password">DB</option><option value="api_token">API</option><option value="ca_private_key">CA</option></select></div>
+          <div class="form-group flex-1"><label for="import-env">Ambiente *</label><select id="import-env" required><option value="prod">Producción</option><option value="staging">Staging</option><option value="dev">Desarrollo</option><option value="test">Test</option></select></div>
         </div>
-        <div class="form-group">
-          <label for="import-owner">Propietario *</label>
-          <input type="text" id="import-owner" required value="admin">
-        </div>
-        <div class="form-group checkbox-group">
-          <label>
-            <input type="checkbox" id="import-exportable" checked>
-            Permitir revelado explícito por operador (Exportable)
-          </label>
-        </div>
-        <div class="form-group">
-          <label for="import-secret">Valor del Secreto *</label>
-          <textarea id="import-secret" rows="3" required placeholder="Valor cifrado o clave en texto claro..."></textarea>
-        </div>
-        <div class="modal-footer">
-          <button type="button" id="btn-cancel-import" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar Credencial</button>
-        </div>
+        <div class="form-group"><label for="import-owner">Propietario *</label><input type="text" id="import-owner" required value="admin"></div>
+        <div class="form-group checkbox-group"><label><input type="checkbox" id="import-exportable" checked> Exportable</label></div>
+        <div class="form-group"><label for="import-secret">Valor del Secreto *</label><textarea id="import-secret" rows="3" required placeholder="Valor en claro..."></textarea></div>
+        <div class="modal-footer"><button type="button" id="btn-cancel-import" class="btn btn-secondary">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     </div>
   </div>
 
-  <!-- Modal 3: Reveal Credential -->
+  <!-- Modal: Reveal -->
   <div id="modal-reveal" class="modal-backdrop hidden">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3>👁️ Revelado Seguro</h3>
-        <button id="btn-close-reveal" class="btn-close">&times;</button>
-      </div>
+      <div class="modal-header"><h3>👁️ Revelado Seguro</h3><button id="btn-close-reveal" class="btn-close">&times;</button></div>
       <div class="modal-body">
-        <div class="alert warning">
-          ⚠️ El revelado se registrará de forma inmutable en el log de auditoría. Se auto-ocultará en 15 segundos.
-        </div>
-        <div class="form-group">
-          <label for="reveal-reason">Motivo del Revelado *</label>
-          <input type="text" id="reveal-reason" placeholder="ej. Diagnóstico de emergencia INC-4092">
-        </div>
-        <button id="btn-confirm-reveal" class="btn btn-warning full-width">Confirmar y Revelar Secreto</button>
-
+        <div class="alert warning">⚠️ El revelado se registrará en auditoría. Auto-ocultado en 15s.</div>
+        <div class="form-group"><label for="reveal-reason">Motivo *</label><input type="text" id="reveal-reason" placeholder="ej. INC-4092"></div>
+        <button id="btn-confirm-reveal" class="btn btn-warning full-width">Confirmar y Revelar</button>
         <div id="reveal-secret-box" class="secret-box hidden">
-          <div class="secret-box-header">
-            <span>Secreto Revelado:</span>
-            <span id="reveal-timer" class="timer-badge">Auto-ocultado en 15s</span>
-          </div>
+          <div class="secret-box-header"><span>Secreto:</span><span id="reveal-timer" class="timer-badge">15s</span></div>
           <pre id="reveal-secret-text" class="secret-code"></pre>
-          <div class="secret-box-actions">
-            <button id="btn-copy-secret" class="btn btn-primary btn-sm">📋 Copiar</button>
-            <button id="btn-hide-secret" class="btn btn-secondary btn-sm">🔒 Ocultar</button>
-          </div>
+          <div class="secret-box-actions"><button id="btn-copy-secret" class="btn btn-primary btn-sm">📋 Copiar</button><button id="btn-hide-secret" class="btn btn-secondary btn-sm">🔒 Ocultar</button></div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="btn-finish-reveal" class="btn btn-secondary">Cerrar</button>
-      </div>
+      <div class="modal-footer"><button id="btn-finish-reveal" class="btn btn-secondary">Cerrar</button></div>
     </div>
   </div>
 
-  <!-- Toast -->
-  <div id="toast" class="toast hidden"></div>
+  <!-- Modal: Create Token -->
+  <div id="modal-token" class="modal-backdrop hidden">
+    <div class="modal-content">
+      <div class="modal-header"><h3>🎫 Crear Session-Token</h3><button id="btn-close-token" class="btn-close">&times;</button></div>
+      <form id="form-token" class="modal-body">
+        <div class="form-group"><label for="token-name">Nombre descriptivo *</label><input type="text" id="token-name" required placeholder="ej. agente-cicd, equipo-frontend"></div>
+        <div class="alert info">El token poseerá los servidores que agregue. Podrás extender su acceso a servidores de otros tokens desde la pestaña de servidores.</div>
+        <div id="token-raw-box" class="secret-box hidden">
+          <div class="secret-box-header"><span>Token (mostrar una sola vez):</span></div>
+          <pre id="token-raw-text" class="secret-code"></pre>
+          <div class="secret-box-actions"><button type="button" id="btn-copy-token" class="btn btn-primary btn-sm">📋 Copiar</button></div>
+        </div>
+        <div class="modal-footer"><button type="button" id="btn-cancel-token" class="btn btn-secondary">Cancelar</button><button type="submit" class="btn btn-primary">Crear</button></div>
+      </form>
+    </div>
+  </div>
 
+  <!-- Modal: Server grants -->
+  <div id="modal-grants" class="modal-backdrop hidden">
+    <div class="modal-content">
+      <div class="modal-header"><h3>🔓 Permisos del servidor</h3><button id="btn-close-grants" class="btn-close">&times;</button></div>
+      <div class="modal-body">
+        <p class="subtitle" id="grants-server-name"></p>
+        <div class="alert info">Por defecto solo el token dueño accede. Extiende el acceso a otros tokens:</div>
+        <div class="form-row">
+          <div class="form-group flex-1"><label for="grant-token-select">Token</label><select id="grant-token-select"></select></div>
+          <button id="btn-add-grant" class="btn btn-primary">Conceder</button>
+        </div>
+        <main class="table-container">
+          <table class="data-table"><thead><tr><th>Token con acceso</th><th>¿Dueño?</th><th>Concedido por</th><th style="text-align:right;"></th></tr></thead><tbody id="grants-tbody"></tbody></table>
+        </main>
+      </div>
+      <div class="modal-footer"><button id="btn-finish-grants" class="btn btn-secondary">Cerrar</button></div>
+    </div>
+  </div>
+
+  <!-- Modal: Cuenta / cambiar contraseña -->
+  <div id="modal-account" class="modal-backdrop hidden">
+    <div class="modal-content">
+      <div class="modal-header"><h3>⚙️ Cuenta</h3><button id="btn-close-account" class="btn-close">&times;</button></div>
+      <form id="form-password" class="modal-body">
+        <div class="form-group"><label for="pw-current">Contraseña actual *</label><input type="password" id="pw-current" required></div>
+        <div class="form-group"><label for="pw-new">Nueva contraseña *</label><input type="password" id="pw-new" required minlength="4"></div>
+        <div class="form-group"><label for="pw-confirm">Confirmar *</label><input type="password" id="pw-confirm" required></div>
+        <div class="modal-footer"><button type="button" id="btn-cancel-account" class="btn btn-secondary">Cancelar</button><button type="submit" class="btn btn-primary">Cambiar contraseña</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
   <script src="js/app.js"></script>
 </body>
 </html>

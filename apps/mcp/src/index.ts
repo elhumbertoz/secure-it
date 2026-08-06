@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SqliteControlPlane, SshExecutor, allDemoScopesFromContracts } from "./deps.js";
+import { SqliteControlPlane, SshExecutor, allDemoScopesFromContracts, createAdminServer } from "./deps.js";
 import { createMcpServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -8,6 +8,15 @@ async function main(): Promise<void> {
   const executor = new SshExecutor((server) => controlPlane.resolveLoginCredential(server));
   controlPlane.setExecutor(executor);
   controlPlane.setScriptExecutor(executor);
+
+  const adminPort = Number(process.env.ADMIN_PORT || 4000);
+  const { app } = createAdminServer({ controlPlane });
+  const adminServer = app.listen(adminPort, "127.0.0.1", () => {
+    console.error(`🛡️ Consola secure-it: http://127.0.0.1:${adminPort}`);
+  });
+  adminServer.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EADDRINUSE") console.error(`Consola administrativa: ${error.message}`);
+  });
 
   // Resuelve el token general de fallback (lo crea en el primer arranque).
   const general = controlPlane.ensureGeneralToken();

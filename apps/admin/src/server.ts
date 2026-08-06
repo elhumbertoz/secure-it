@@ -34,6 +34,26 @@ export function createAdminServer(options: CreateAdminServerOptions = {}) {
     res.json({ status: "ok", service: "secure-it-admin" });
   });
 
+  app.get("/api/auth/setup-status", (_req, res) => {
+    res.json({ setup_required: !controlPlane.hasAdminUsers() });
+  });
+
+  app.post("/api/auth/setup", (req: Request, res: Response) => {
+    try {
+      if (!isLoopback(req.ip)) {
+        res.status(403).json({ error: "POLICY_DENIED", message: "El alta inicial solo está disponible localmente" });
+        return;
+      }
+      const username = typeof req.body?.username === "string" ? req.body.username : "admin";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const user = controlPlane.createInitialAdmin(username, password);
+      const sessionToken = createSession(user.username);
+      res.status(201).json({ session_token: sessionToken, username: user.username });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   // ── Auth: login / sesión / cambio de contraseña ──────────────────────
   app.post("/api/auth/login", (req: Request, res: Response) => {
     const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
@@ -304,6 +324,10 @@ function extractBearer(req: Request): string | undefined {
     return auth.slice(7).trim();
   }
   return undefined;
+}
+
+function isLoopback(address: string | undefined): boolean {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
 function adminContextOf(req: Request): { ctx: RequestContext; adminUser: string } | undefined {

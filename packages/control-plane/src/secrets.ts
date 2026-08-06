@@ -6,6 +6,7 @@ import {
   type CipherKey
 } from "node:crypto";
 import { DomainError } from "./errors.js";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 
 /**
  * Forma persistida del secreto: `v1.<base64(iv)>.<base64(tag)>.<base64(ciphertext)>`.
@@ -25,6 +26,7 @@ export interface MasterKey {
 export interface ResolveMasterKeyOptions {
   masterKey?: string | Buffer;
   inMemory?: boolean;
+  keyFile?: string;
 }
 
 const scryptSalt = Buffer.from("secure-it/aes-256-gcm/v1", "utf8");
@@ -53,6 +55,19 @@ export function resolveMasterKey(options: ResolveMasterKeyOptions = {}): MasterK
   const explicit = options.masterKey ?? process.env.SECUREIT_MASTER_KEY;
   if (explicit) {
     return { key: deriveKey(String(explicit)), ephemeral: false };
+  }
+  if (!options.inMemory && options.keyFile) {
+    let material: string;
+    try {
+      material = readFileSync(options.keyFile, "utf8").trim();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw error;
+      material = randomBytes(KEY_BYTES).toString("base64url");
+      writeFileSync(options.keyFile, `${material}\n`, { mode: 0o600, flag: "wx" });
+    }
+    chmodSync(options.keyFile, 0o600);
+    return { key: deriveKey(material), ephemeral: false };
   }
   return { key: randomBytes(KEY_BYTES), ephemeral: true };
 }

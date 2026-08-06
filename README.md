@@ -75,7 +75,19 @@ No necesitas levantar contenedores Docker, instalar bases de datos PostgreSQL ni
 
 ---
 
-### Paso 1: Configura tu Cliente de IA
+### Una sola línea
+
+No necesitas crear un proyecto, clonar el repositorio ni configurar variables:
+
+```bash
+npx -y @secure-it/mcp@beta
+```
+
+El primer arranque crea la base y su clave de cifrado local con permisos
+restrictivos, inicia MCP por `stdio` y abre la consola en
+`http://127.0.0.1:4000`. Entra allí una vez para crear tu cuenta administrativa.
+
+### Configura tu Cliente de IA
 
 Copia y pega la siguiente configuración en tu cliente MCP preferido:
 
@@ -90,7 +102,7 @@ Edita tu archivo `claude_desktop_config.json`:
   "mcpServers": {
     "secure-it": {
       "command": "npx",
-      "args": ["-y", "@secure-it/mcp"]
+      "args": ["-y", "@secure-it/mcp@beta"]
     }
   }
 }
@@ -130,14 +142,6 @@ Una vez guardada la configuración, abre tu cliente de IA y prueba estos prompts
 💬 "Muestra el estado de enrolamiento del nuevo servidor."
 ```
 
-Antes del primer arranque persistente, configura secretos aleatorios desde tu
-gestor de secretos (no los guardes en el repositorio):
-
-```bash
-export SECUREIT_ADMIN_PASSWORD='una-clave-aleatoria-de-al-menos-12-caracteres'
-export SECUREIT_MASTER_KEY='una-clave-maestra-aleatoria-de-al-menos-32-bytes'
-```
-
 `secure-it` creará automáticamente la base de datos persistente SQLite una sola vez, en una ubicación compartida del host para que **todas las instancias** (CLI, admin web y servidores MCP) vean el mismo inventario, credenciales y auditoría:
 
 | Plataforma | Ruta por defecto |
@@ -146,7 +150,7 @@ export SECUREIT_MASTER_KEY='una-clave-maestra-aleatoria-de-al-menos-32-bytes'
 | macOS | `~/Library/Application Support/secure-it/secureit.db` |
 | Linux / otros | `${XDG_DATA_HOME:-~/.local/share}/secure-it/secureit.db` |
 
-*Instalaciones anteriores siguen usando `~/.secure-it/secureit.db` (backward-compat). Para forzar una ruta distinta define `SECUREIT_DB_PATH=/ruta/absoluta.db`. El contenido de las credenciales se cifra siempre con AES-256-GCM (`SECUREIT_MASTER_KEY`).*
+*Instalaciones anteriores siguen usando `~/.secure-it/secureit.db` (backward-compat). Para forzar una ruta distinta define `SECUREIT_DB_PATH=/ruta/absoluta.db`. Las credenciales se cifran con AES-256-GCM; puedes aportar `SECUREIT_MASTER_KEY` desde un gestor de secretos o dejar que secure-it genere una clave local protegida automáticamente.*
 
 ---
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { unlinkSync, existsSync } from "node:fs";
+import { unlinkSync, existsSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { SqliteControlPlane, encryptSecret, decryptSecret } from "@secure-it/control-plane";
 import type { RequestContext } from "../../packages/control-plane/src/types.js";
@@ -123,16 +123,17 @@ describe("cifrado de credenciales en reposo (AES-256-GCM)", () => {
     }
   });
 
-  it("bloquea persistir secretos nuevos en disco sin SECUREIT_MASTER_KEY", () => {
+  it("genera una clave local protegida si SECUREIT_MASTER_KEY no está definida", () => {
     const dbPath = join(tmpdir(), `test-secureit-nokey-${randomUUID()}.db`);
     try {
       const cp = new SqliteControlPlane({ dbPath, adminPassword: "test-bootstrap-password" });
-      expect(() =>
-        cp.createCredential({ alias: "x", secretValue: "nueva" }, adminCtx)
-      ).toThrow(/SECUREIT_MASTER_KEY/);
+      expect(() => cp.createCredential({ alias: "x", secretValue: "nueva" }, adminCtx)).not.toThrow();
+      expect(existsSync(`${dbPath}.key`)).toBe(true);
+      expect(statSync(`${dbPath}.key`).mode & 0o777).toBe(0o600);
       cp.close();
     } finally {
       if (existsSync(dbPath)) unlinkSync(dbPath);
+      if (existsSync(`${dbPath}.key`)) unlinkSync(`${dbPath}.key`);
     }
   });
 });

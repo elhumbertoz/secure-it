@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/admin",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -8,7 +8,7 @@
   "description": "Consola administrativa local de secure-it.",
   "license": "MIT",
   "homepage": "https://github.com/elhumbertoz/secure-it",
-  "repository": "github:elhumbertoz/secure-it",
+  "repository": { "type": "git", "url": "git+https://github.com/elhumbertoz/secure-it.git" },
   "files": [
     "dist",
     "public",
@@ -25,8 +25,8 @@
     "secure-it-admin": "dist/index.js"
   },
   "dependencies": {
-    "@secure-it/contracts": "0.1.0-beta.0",
-    "@secure-it/control-plane": "0.1.0-beta.0",
+    "@secure-it/contracts": "0.1.0-beta.1",
+    "@secure-it/control-plane": "0.1.0-beta.1",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1"
   },

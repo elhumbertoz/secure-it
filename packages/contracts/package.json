@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/contracts",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -8,7 +8,7 @@
   "description": "Contratos JSON Schema y validación para secure-it.",
   "license": "MIT",
   "homepage": "https://github.com/elhumbertoz/secure-it",
-  "repository": "github:elhumbertoz/secure-it",
+  "repository": { "type": "git", "url": "git+https://github.com/elhumbertoz/secure-it.git" },
   "files": [
     "dist",
     "spec",

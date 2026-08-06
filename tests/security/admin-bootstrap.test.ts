@@ -11,11 +11,13 @@ afterEach(() => {
 });
 
 describe("bootstrap administrativo", () => {
-  it("rechaza una primera base persistente sin contraseña explícita", () => {
+  it("permite el primer arranque y deja pendiente el alta local", () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "secure-it-bootstrap-")), "secureit.db");
-    expect(() => new SqliteControlPlane({ dbPath, masterKey: "test-master-key" })).toThrow(
-      /SECUREIT_ADMIN_PASSWORD/
-    );
+    const store = new SqliteControlPlane({ dbPath, masterKey: "test-master-key" });
+    opened.push(store);
+    expect(store.hasAdminUsers()).toBe(false);
+    store.createInitialAdmin("admin", "a-long-random-password");
+    expect(store.hasAdminUsers()).toBe(true);
   });
 
   it("crea la cuenta inicial sin exponer la contraseña", () => {

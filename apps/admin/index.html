@@ -15,11 +15,11 @@
     <form id="login-form" class="login-card">
       <div class="brand-logo big">🛡️</div>
       <h2>secure-it Admin</h2>
-      <p class="subtitle">Inicia sesión para administrar servidores, credenciales y tokens.</p>
+      <p class="subtitle" id="login-message">Inicia sesión para administrar servidores, credenciales y tokens.</p>
       <input type="text" id="login-user" placeholder="Usuario" autocomplete="username" required>
       <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password" required>
-      <button type="submit" class="btn btn-primary full-width">Entrar</button>
-      <p class="login-hint">Usa la cuenta configurada durante el bootstrap seguro.</p>
+      <button type="submit" id="login-submit" class="btn btn-primary full-width">Entrar</button>
+      <p class="login-hint" id="login-hint">La primera vez crearás aquí tu cuenta administrativa.</p>
     </form>
   </div>
 

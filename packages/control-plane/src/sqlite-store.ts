@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
-import { mkdirSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, existsSync } from "node:fs";
 import {
   requiredScopeFor,
   validateJsonSchema,
@@ -118,10 +118,6 @@ export class SqliteControlPlane {
     this.executor = options.executor ?? null;
     this.scriptExecutor = options.scriptExecutor ?? null;
     this.inMemory = Boolean(options.inMemory);
-    this.masterKey = resolveMasterKey({
-      ...(options.masterKey !== undefined ? { masterKey: options.masterKey } : {}),
-      inMemory: this.inMemory
-    });
     let dbPath = options.dbPath || process.env.SECUREIT_DB_PATH;
     if (options.inMemory) {
       dbPath = ":memory:";
@@ -129,7 +125,14 @@ export class SqliteControlPlane {
       dbPath = resolveDefaultDbPath();
     }
 
+    this.masterKey = resolveMasterKey({
+      ...(options.masterKey !== undefined ? { masterKey: options.masterKey } : {}),
+      inMemory: this.inMemory,
+      ...(!this.inMemory && dbPath ? { keyFile: `${dbPath}.key` } : {})
+    });
+
     this.db = new DatabaseSync(dbPath);
+    if (dbPath !== ":memory:") chmodSync(dbPath, 0o600);
     this.initSchema();
     this.ensureInitialAdmin(options.adminUsername, options.adminPassword);
     this.migratePlaintextCredentials();
@@ -294,6 +297,7 @@ export class SqliteControlPlane {
     // El valor de pruebas solo se permite en memoria; una instalación persistente
     // debe recibir el secreto fuera del repositorio.
     const password = passwordOption ?? process.env.SECUREIT_ADMIN_PASSWORD ?? (this.inMemory ? "admin" : "");
+    if (!password && !this.inMemory) return;
     if (!username || (!this.inMemory && password.length < 12)) {
       throw new Error(
         "La instalación inicial requiere SECUREIT_ADMIN_PASSWORD con al menos 12 caracteres. " +
@@ -310,6 +314,25 @@ export class SqliteControlPlane {
       .prepare("INSERT INTO admin_users (id, username, data) VALUES (?, ?, ?)")
       .run(user.id, user.username, JSON.stringify(user));
     console.warn(`[admin-security] Cuenta administrativa inicial creada para '${username}'.`);
+  }
+
+  hasAdminUsers(): boolean {
+    const row = this.db.prepare("SELECT COUNT(*) as count FROM admin_users").get() as { count: number };
+    return row.count > 0;
+  }
+
+  createInitialAdmin(username: string, password: string): AdminUser {
+    if (this.hasAdminUsers()) throw new DomainError("CONFLICT", "La cuenta inicial ya fue creada");
+    const cleanUsername = username.trim();
+    if (!cleanUsername || password.length < 12) {
+      throw new DomainError("INVALID_ARGUMENT", "Usuario requerido y contraseña de al menos 12 caracteres");
+    }
+    const user: AdminUser = {
+      id: randomUUID(), username: cleanUsername, passwordHash: hashPassword(password), createdAt: new Date().toISOString()
+    };
+    this.db.prepare("INSERT INTO admin_users (id, username, data) VALUES (?, ?, ?)")
+      .run(user.id, user.username, JSON.stringify(user));
+    return user;
   }
 
   /**

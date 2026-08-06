@@ -5,8 +5,9 @@
 La versión 0.1.x debe considerarse preliminar. Use datos sintéticos en demos y
 complete una revisión de seguridad independiente antes de conectarla a sistemas
 de producción. El bootstrap de una base persistente exige
-`SECUREIT_ADMIN_PASSWORD` y el almacenamiento de credenciales exige
-`SECUREIT_MASTER_KEY`; ambos valores deben proceder de un gestor de secretos.
+La instalación interactiva crea la cuenta en la consola local y genera una clave
+maestra local con permisos `0600`. En despliegues gestionados se pueden inyectar
+`SECUREIT_ADMIN_PASSWORD` y `SECUREIT_MASTER_KEY` desde un gestor de secretos.
 
 ## No use secretos reales en la demostración
 

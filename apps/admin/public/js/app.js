@@ -8,6 +8,7 @@
   let generalTokenId = null;
   let revealTimer = null;
   let revealingCred = null;
+  let setupRequired = false;
 
   const $ = (id) => document.getElementById(id);
 
@@ -57,7 +58,7 @@
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(setupRequired ? "/api/auth/setup" : "/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: loginUser.value.trim(), password: loginPass.value })
@@ -66,6 +67,7 @@
       if (!res.ok) { showToast(data.message || "Credenciales inválidas", "error"); return; }
       sessionToken = data.session_token;
       username = data.username;
+      setupRequired = false;
       localStorage.setItem("secureit_session", sessionToken);
       showApp();
     } catch (err) { showToast(err.message, "error"); }
@@ -477,4 +479,17 @@
     const t = $("toast"); t.textContent = msg; t.className = `toast ${type}`;
     setTimeout(() => { t.className = "toast hidden"; }, 3500);
   }
+
+  fetch("/api/auth/setup-status")
+    .then((res) => res.json())
+    .then((data) => {
+      setupRequired = data.setup_required === true;
+      if (setupRequired) {
+        $("login-message").textContent = "Crea tu cuenta administrativa para terminar la instalación.";
+        $("login-submit").textContent = "Crear cuenta y entrar";
+        $("login-hint").textContent = "Usa una contraseña de al menos 12 caracteres.";
+        loginUser.value = "admin";
+      }
+    })
+    .catch(() => {});
 })();

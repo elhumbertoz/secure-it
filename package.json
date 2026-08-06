@@ -1,6 +1,6 @@
 {
   "name": "secure-it",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "Plano de control y servidor MCP para operar infraestructura sin exponer credenciales al agente.",
   "license": "MIT",
