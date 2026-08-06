@@ -77,7 +77,7 @@
       </section>
       <main class="table-container">
         <table class="data-table">
-          <thead><tr><th>Nombre / Host</th><th>Endpoint</th><th>Modo</th><th>Ambiente</th><th>Propietario</th><th>Token Dueño</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
+          <thead><tr><th>Nombre / Host</th><th>Endpoint</th><th>Credencial efectiva</th><th>Modo</th><th>Ambiente</th><th>Propietario</th><th>Token Dueño</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr></thead>
           <tbody id="servers-tbody"></tbody>
         </table>
       </main>
@@ -94,7 +94,7 @@
       </section>
       <main class="table-container">
         <table class="data-table">
-          <thead><tr><th>Alias</th><th>Tipo</th><th>Propietario</th><th>Ambiente</th><th>Estado</th><th>Versión</th><th>Última Rotación</th><th>Exportable</th><th style="text-align:right;">Acciones</th></tr></thead>
+          <thead><tr><th>Alias</th><th>Usada por servidores</th><th>Tipo</th><th>Propietario</th><th>Ambiente</th><th>Estado</th><th>Versión</th><th>Última Rotación</th><th style="text-align:right;">Acciones</th></tr></thead>
           <tbody id="credentials-tbody"></tbody>
         </table>
       </main>
@@ -159,7 +159,6 @@
           <div class="form-group flex-1"><label for="import-env">Ambiente *</label><select id="import-env" required><option value="prod">Producción</option><option value="staging">Staging</option><option value="dev">Desarrollo</option><option value="test">Test</option></select></div>
         </div>
         <div class="form-group"><label for="import-owner">Propietario *</label><input type="text" id="import-owner" required value="admin"></div>
-        <div class="form-group checkbox-group"><label><input type="checkbox" id="import-exportable" checked> Exportable</label></div>
         <div class="form-group"><label for="import-secret">Valor del Secreto *</label><textarea id="import-secret" rows="3" required placeholder="Valor en claro..."></textarea></div>
         <div class="modal-footer"><button type="button" id="btn-cancel-import" class="btn btn-secondary">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>

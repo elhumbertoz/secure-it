@@ -483,9 +483,11 @@ export class DemoControlPlane {
       void context;
       return {
         rotation_job_id: randomUUID(),
-        status: "awaiting_approval",
+        status: "failed",
         target_count: servers.length,
-        admin_action_required: true
+        opaque_version_id: null,
+        verified_at: null,
+        admin_action_required: false
       };
     });
   }

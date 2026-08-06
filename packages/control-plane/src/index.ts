@@ -1,7 +1,7 @@
 export { DemoControlPlane } from "./control-plane.js";
 export { SqliteControlPlane, type SqliteControlPlaneOptions } from "./sqlite-store.js";
 export { SshExecutor, type SshExecutorOptions } from "./ssh-executor.js";
-export { buildCommand, type ActionExecutor, type ScriptExecutor, type ExecutionOutcome, type ResolvedCredential, type CredentialResolver } from "./executor.js";
+export { buildCommand, type ActionExecutor, type ScriptExecutor, type CredentialRotator, type CredentialRotationOutcome, type ExecutionOutcome, type ResolvedCredential, type CredentialResolver } from "./executor.js";
 export { DomainError } from "./errors.js";
 export { assertSafeDemoEndpoint, sanitizeOutput, sha256 } from "./security.js";
 export {

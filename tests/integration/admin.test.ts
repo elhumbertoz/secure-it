@@ -162,36 +162,37 @@ describe("Interfaz Administrativa Web de Credenciales", () => {
     expect(revealAudit.reasonCode).toBe("Auditoría de integración de pruebas");
   });
 
-  it("DENEGA revelado para credencial NO exportable (ca_private_key)", async () => {
+  it("migra y permite revelar credenciales anteriormente no exportables", async () => {
     const { baseUrl, token } = await startAdminServer();
 
     const listRes = await fetch(`${baseUrl}/api/credentials`, {
       headers: { "X-Admin-Token": token }
     });
     const list = await listRes.json();
-    const nonExportableCred = list.find((c: any) => c.exportable === false);
-    expect(nonExportableCred).toBeDefined();
+    const migratedCred = list.find((c: any) => c.type === "ca_private_key");
+    expect(migratedCred).toBeDefined();
+    expect(migratedCred.exportable).toBe(true);
 
-    const revealRes = await fetch(`${baseUrl}/api/credentials/${nonExportableCred.id}/reveal`, {
+    const revealRes = await fetch(`${baseUrl}/api/credentials/${migratedCred.id}/reveal`, {
       method: "POST",
       headers: {
         "X-Admin-Token": token,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ reason: "Intento no autorizado" })
+      body: JSON.stringify({ reason: "Recuperación administrativa" })
     });
 
-    expect(revealRes.status).toBe(403);
+    expect(revealRes.status).toBe(200);
     const body = await revealRes.json();
-    expect(body.error).toBe("POLICY_DENIED");
+    expect(typeof body.secretValue).toBe("string");
 
     // Verify denied audit event logged
     const auditRes = await fetch(`${baseUrl}/api/audit-events`, {
       headers: { "X-Admin-Token": token }
     });
     const audits = await auditRes.json();
-    const deniedAudit = audits.find((a: any) => a.operation === "credential:reveal" && a.outcome === "denied" && a.objectIds.includes(nonExportableCred.id));
-    expect(deniedAudit).toBeDefined();
+    const revealAudit = audits.find((a: any) => a.operation === "credential:reveal" && a.outcome === "allowed" && a.objectIds.includes(migratedCred.id));
+    expect(revealAudit).toBeDefined();
   });
 
   it("ejecuta rotación y revocación correctamente", async () => {
@@ -256,6 +257,18 @@ describe("Interfaz Administrativa Web de Credenciales", () => {
     expect(postRes.status).toBe(201);
     const created = await postRes.json();
     expect(created.state).toBe("managed");
+
+    const boundListRes = await fetch(`${baseUrl}/api/servers`, {
+      headers: { "X-Admin-Token": token }
+    });
+    const boundList = await boundListRes.json();
+    const boundServer = boundList.servers.find((server: any) => server.id === created.server_id);
+    expect(boundServer.credentialBinding).toMatchObject({
+      credentialAlias: "admin-created-server-01:admin",
+      username: "admin",
+      type: "db_password"
+    });
+    expect(JSON.stringify(boundServer.credentialBinding)).not.toContain("AdminPassword123");
 
     // DELETE /api/servers/:id
     const delRes = await fetch(`${baseUrl}/api/servers/${created.server_id}`, {

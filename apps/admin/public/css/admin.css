@@ -643,7 +643,11 @@ select {
     radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.12) 0px, transparent 50%);
   z-index: 1500;
 }
+.login-screen.hidden { display: none; }
 .app-container.hidden { display: none; }
+.text-muted { color: var(--text-muted); }
+.binding-detail { display: block; color: var(--text-muted); margin-top: 0.2rem; }
+.binding-server { display: inline-block; margin: 0.1rem 0.25rem 0.1rem 0; }
 .login-card {
   background: var(--bg-card);
   border: 1px solid var(--bg-card-border);

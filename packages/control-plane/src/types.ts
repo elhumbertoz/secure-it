@@ -112,6 +112,8 @@ export interface CredentialRecord {
    * Formato: `v1.<base64(iv)>.<base64(tag)>.<base64(ciphertext)>`.
    */
   secretCipher?: string;
+  /** Candidato cifrado previo a una rotación remota; nunca se expone en listados. */
+  pendingSecretCipher?: string;
 }
 
 export interface RequestContext {
@@ -165,4 +167,3 @@ export interface AuditEvent {
   objectIds: string[];
   reasonCode: string;
 }
-

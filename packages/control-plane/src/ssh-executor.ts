@@ -1,5 +1,5 @@
 import { Client } from "ssh2";
-import { buildCommand, type ActionExecutor, type ScriptExecutor, type CredentialResolver, type ExecutionOutcome } from "./executor.js";
+import { buildCommand, type ActionExecutor, type CredentialRotator, type CredentialRotationOutcome, type ScriptExecutor, type CredentialResolver, type ExecutionOutcome, type ResolvedCredential } from "./executor.js";
 import { DomainError } from "./errors.js";
 import type { ActionDefinition, ServerRecord } from "./types.js";
 
@@ -10,7 +10,7 @@ export interface SshExecutorOptions {
   readyTimeoutSeconds?: number;
 }
 
-export class SshExecutor implements ActionExecutor, ScriptExecutor {
+export class SshExecutor implements ActionExecutor, ScriptExecutor, CredentialRotator {
   readonly name = "ssh";
   private readonly resolve: CredentialResolver;
   private readonly commandTimeoutSeconds: number;
@@ -37,6 +37,124 @@ export class SshExecutor implements ActionExecutor, ScriptExecutor {
     timeoutSeconds?: number
   ): Promise<ExecutionOutcome> {
     return this.runCommand(server, script, timeoutSeconds ?? this.commandTimeoutSeconds);
+  }
+
+  async rotatePassword(server: ServerRecord, newPassword: string): Promise<CredentialRotationOutcome> {
+    const current = this.resolve(server);
+    if (!current || current.kind !== "password" || !current.secret) {
+      return { verified: false, error: "La credencial asociada no es una contraseña SSH" };
+    }
+
+    const changed = await this.changePasswordWithSudo(server, current, newPassword);
+    if (changed.verified || changed.remoteMayHaveChanged) {
+      const verified = await this.verifyPasswordLogin(server, current.username, newPassword);
+      if (verified.verified) return verified;
+    }
+    return changed;
+  }
+
+  /**
+   * Usa sudo/chpasswd con los secretos por stdin. Ningún secreto forma parte del
+   * comando remoto, argv, stdout ni stderr. Requiere permiso sudo para chpasswd.
+   */
+  private changePasswordWithSudo(
+    server: ServerRecord,
+    current: ResolvedCredential,
+    newPassword: string
+  ): Promise<CredentialRotationOutcome> {
+    return new Promise((resolve) => {
+      const client = new Client();
+      let settled = false;
+      let credentialSubmitted = false;
+      const finish = (result: CredentialRotationOutcome): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { client.end(); } catch { /* ignore */ }
+        resolve(result);
+      };
+      const timer = setTimeout(
+        () => finish({ verified: false, remoteMayHaveChanged: credentialSubmitted, error: "Timeout al cambiar la contraseña remota" }),
+        this.commandTimeoutSeconds * 1000
+      );
+
+      client.on("ready", () => {
+        const command = "sudo -S -p '[secure-it-sudo]' sh -c 'echo [secure-it-ready]; exec chpasswd'";
+        client.exec(command, { pty: false }, (err, stream) => {
+          if (err) return finish({ verified: false, error: "No se pudo iniciar chpasswd" });
+          let output = "";
+          let sudoSent = false;
+          let credentialSent = false;
+          let exitCode: number | null = null;
+          const consume = (chunk: Buffer): void => {
+            output += chunk.toString("utf8");
+            if (!sudoSent && output.includes("[secure-it-sudo]")) {
+              sudoSent = true;
+              stream.write(`${current.secret}\n`);
+            }
+            if (!credentialSent && output.includes("[secure-it-ready]")) {
+              credentialSent = true;
+              credentialSubmitted = true;
+              stream.end(`${current.username}:${newPassword}\n`);
+            }
+          };
+          stream.on("data", consume);
+          stream.stderr.on("data", consume);
+          stream.on("exit", (code: number | null) => { exitCode = code; });
+          stream.on("close", () => {
+            if (exitCode === 0 && credentialSent) finish({ verified: true });
+            else finish({ verified: false, remoteMayHaveChanged: credentialSent, error: "El servidor rechazó el cambio de contraseña" });
+          });
+        });
+      });
+      client.on("error", () => finish({ verified: false, error: "Falló la conexión SSH con la credencial vigente" }));
+      client.connect(this.connectionConfig(server, current.username, current.secret));
+    });
+  }
+
+  private verifyPasswordLogin(
+    server: ServerRecord,
+    username: string,
+    password: string
+  ): Promise<CredentialRotationOutcome> {
+    return new Promise((resolve) => {
+      const client = new Client();
+      let settled = false;
+      const finish = (result: CredentialRotationOutcome): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { client.end(); } catch { /* ignore */ }
+        resolve(result);
+      };
+      const timer = setTimeout(
+        () => finish({ verified: false, error: "Timeout al verificar la contraseña nueva" }),
+        this.readyTimeoutSeconds * 1000
+      );
+      client.on("ready", () => finish({ verified: true }));
+      client.on("error", () => finish({ verified: false, error: "La contraseña cambió, pero el nuevo login SSH no pudo verificarse" }));
+      client.connect(this.connectionConfig(server, username, password));
+    });
+  }
+
+  private connectionConfig(server: ServerRecord, username: string, password: string): Parameters<Client["connect"]>[0] {
+    const expected = server.expectedHostIdentity.startsWith("SHA256:")
+      ? server.expectedHostIdentity.slice("SHA256:".length)
+      : null;
+    const expectedHex = expected ? Buffer.from(expected, "base64").toString("hex") : null;
+    return {
+      host: server.endpoint.address,
+      port: server.endpoint.port,
+      username,
+      password,
+      readyTimeout: this.readyTimeoutSeconds * 1000,
+      ...(server.labels.ssh_host_key_algorithm === "ssh-ed25519"
+        ? { algorithms: { serverHostKey: ["ssh-ed25519" as const] } }
+        : {}),
+      ...(expectedHex
+        ? { hostHash: "sha256", hostVerifier: (hash: string) => hash.toLowerCase() === expectedHex }
+        : {})
+    };
   }
 
   private runCommand(server: ServerRecord, command: string, timeoutSeconds: number): Promise<ExecutionOutcome> {
@@ -73,6 +191,14 @@ export class SshExecutor implements ActionExecutor, ScriptExecutor {
         username: cred.username,
         readyTimeout: this.readyTimeoutSeconds * 1000
       };
+      if (server.expectedHostIdentity.startsWith("SHA256:")) {
+        const expected = Buffer.from(server.expectedHostIdentity.slice("SHA256:".length), "base64").toString("hex");
+        connectConfig.hostHash = "sha256";
+        connectConfig.hostVerifier = (hash: string) => hash.toLowerCase() === expected;
+      }
+      if (server.labels.ssh_host_key_algorithm) {
+        connectConfig.algorithms = { serverHostKey: [server.labels.ssh_host_key_algorithm] };
+      }
       if (cred.kind === "privateKey") {
         connectConfig.privateKey = cred.secret;
       } else {

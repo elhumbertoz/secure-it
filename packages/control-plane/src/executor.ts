@@ -55,6 +55,20 @@ export interface ScriptExecutor {
   ): Promise<ExecutionOutcome>;
 }
 
+/** Resultado interno de una rotación; nunca contiene el secreto nuevo. */
+export interface CredentialRotationOutcome {
+  verified: boolean;
+  error?: string;
+  /** El comando recibió la credencial nueva aunque se perdiera su respuesta. */
+  remoteMayHaveChanged?: boolean;
+}
+
+/** Ejecutor privilegiado que cambia y verifica una contraseña fuera del LLM. */
+export interface CredentialRotator {
+  readonly name: string;
+  rotatePassword(server: ServerRecord, newPassword: string): Promise<CredentialRotationOutcome>;
+}
+
 /**
  * Caracteres permitidos en cualquier valor que se sustituya en una plantilla de
  * comando. Defense-in-depth: aunque `parameterSchema` acote con `enum`, bloquea

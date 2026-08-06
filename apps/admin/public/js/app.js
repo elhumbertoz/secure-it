@@ -196,14 +196,15 @@
       }
       return true;
     });
-    if (filtered.length === 0) { emptyRow(tbody, 8, "No hay servidores."); return; }
+    if (filtered.length === 0) { emptyRow(tbody, 9, "No hay servidores."); return; }
     filtered.forEach((s) => {
       const tr = document.createElement("tr");
       tr.appendChild(tdStrong(s.name));
       tr.appendChild(tdText(s.endpoint ? `${s.endpoint.address}:${s.endpoint.port}` : "-"));
+      tr.appendChild(tdCredentialBinding(s.credentialBinding));
       tr.appendChild(tdBadge(s.connectionMode, "info"));
       tr.appendChild(tdBadge(s.environment, s.environment === "prod" ? "danger" : "warning"));
-      tr.appendChild(tdText(s.owner || "admin")));
+      tr.appendChild(tdText(s.owner || "admin"));
       tr.appendChild(tdText(tokenLabel(s.ownerTokenId)));
       const stTd = document.createElement("td");
       const dot = document.createElement("span");
@@ -244,16 +245,17 @@
     filtered.forEach((c) => {
       const tr = document.createElement("tr");
       tr.appendChild(tdStrong(c.alias));
+      tr.appendChild(tdServerBindings(c.id));
       tr.appendChild(tdBadge(c.type, "info"));
       tr.appendChild(tdText(c.owner));
       tr.appendChild(tdBadge(c.environment, c.environment === "prod" ? "danger" : "warning"));
       tr.appendChild(tdBadge(c.status, c.status === "active" ? "success" : c.status === "rotated" ? "warning" : "danger"));
       tr.appendChild(tdText(`v${c.version}`));
       tr.appendChild(tdText(c.lastRotatedAt ? new Date(c.lastRotatedAt).toLocaleString() : "-"));
-      tr.appendChild(tdBadge(c.exportable ? "Exportable" : "No exp.", c.exportable ? "purple" : "secondary"));
       const ac = document.createElement("td"); ac.style.textAlign = "right";
       const acts = document.createElement("div"); acts.className = "actions-cell";
-      if (c.exportable) { const b = btn("👁️", "warning", () => openRevealModal(c.id)); acts.appendChild(b); }
+      const revealButton = btn("👁️", "warning", () => openRevealModal(c.id));
+      acts.appendChild(revealButton);
       acts.appendChild(btn("🔄", "primary", () => handleRotate(c.id)));
       acts.appendChild(btn("🧪", "secondary", () => handleTest(c.id)));
       if (c.status !== "revoked") acts.appendChild(btn("🚫", "danger", () => handleRevoke(c.id)));
@@ -336,7 +338,6 @@
       type: $("import-type").value,
       owner: $("import-owner").value.trim(),
       environment: $("import-env").value,
-      exportable: $("import-exportable").checked,
       secretValue: $("import-secret").value.trim()
     };
     try {
@@ -472,6 +473,25 @@
   function tdText(text) { const td = document.createElement("td"); td.textContent = text ?? ""; return td; }
   function tdStrong(text) { const td = document.createElement("td"); const s = document.createElement("strong"); s.textContent = text; td.appendChild(s); return td; }
   function tdBadge(text, cls) { const td = document.createElement("td"); const b = document.createElement("span"); b.className = `badge ${cls}`; b.textContent = text; td.appendChild(b); return td; }
+  function tdCredentialBinding(binding) {
+    const td = document.createElement("td");
+    if (!binding) { td.textContent = "Sin credencial"; td.className = "text-muted"; return td; }
+    const alias = document.createElement("strong"); alias.textContent = binding.credentialAlias;
+    const detail = document.createElement("small"); detail.className = "binding-detail";
+    detail.textContent = `${binding.username} · ${binding.type}`;
+    td.append(alias, detail);
+    return td;
+  }
+  function tdServerBindings(credentialId) {
+    const td = document.createElement("td");
+    const servers = serversCache.filter((s) => s.credentialBinding?.credentialId === credentialId);
+    if (servers.length === 0) { td.textContent = "No asignada"; td.className = "text-muted"; return td; }
+    servers.forEach((server) => {
+      const badge = document.createElement("span"); badge.className = "badge success binding-server";
+      badge.textContent = server.name; td.appendChild(badge);
+    });
+    return td;
+  }
   function btn(label, cls, onClick) { const b = document.createElement("button"); b.className = `btn btn-${cls} btn-sm`; b.textContent = label; b.addEventListener("click", onClick); return b; }
   function emptyRow(tbody, span, msg) { const tr = document.createElement("tr"); const td = document.createElement("td"); td.setAttribute("colspan", String(span)); td.style.textAlign = "center"; td.style.color = "var(--text-muted)"; td.style.padding = "1.5rem"; td.textContent = msg; tr.appendChild(td); tbody.appendChild(tr); }
 

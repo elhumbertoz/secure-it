@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
@@ -13,7 +13,7 @@ import {
 } from "@secure-it/contracts";
 import { DomainError } from "./errors.js";
 import { demoActions, demoProfiles, demoServers, testServerRecord } from "./fixtures.js";
-import { type ActionExecutor, type ScriptExecutor, type ExecutionOutcome, type ResolvedCredential } from "./executor.js";
+import { type ActionExecutor, type CredentialRotator, type ScriptExecutor, type ExecutionOutcome, type ResolvedCredential } from "./executor.js";
 import { assertSafeDemoEndpoint, sanitizeOutput, sha256 } from "./security.js";
 import {
   decryptSecret,
@@ -111,6 +111,7 @@ export class SqliteControlPlane {
   private db: DatabaseSync;
   private executor: ActionExecutor | null;
   private scriptExecutor: ScriptExecutor | null;
+  private credentialRotator: CredentialRotator | null = null;
   private readonly masterKey: MasterKey;
   private readonly inMemory: boolean;
 
@@ -137,6 +138,23 @@ export class SqliteControlPlane {
     this.ensureInitialAdmin(options.adminUsername, options.adminPassword);
     this.migratePlaintextCredentials();
     this.seedIfEmpty(Boolean(options.seedDemoData), Boolean(options.seedTestServer));
+    this.migrateCredentialsToExportable();
+  }
+
+  /**
+   * La consola administrativa permite recuperar cualquier credencial. Esta
+   * migración mantiene compatibles las instalaciones que guardaron
+   * `exportable: false` antes de que la política se simplificara.
+   */
+  private migrateCredentialsToExportable(): void {
+    const rows = this.db.prepare("SELECT id, data FROM credentials").all() as { id: string; data: string }[];
+    const update = this.db.prepare("UPDATE credentials SET data = ? WHERE id = ?");
+    for (const row of rows) {
+      const cred = JSON.parse(row.data) as CredentialRecord;
+      if (cred.exportable === true) continue;
+      cred.exportable = true;
+      update.run(JSON.stringify(cred), row.id);
+    }
   }
 
   /**
@@ -197,6 +215,11 @@ export class SqliteControlPlane {
     this.scriptExecutor = executor;
   }
 
+  /** Inyecta el ejecutor de rotación remota y verificación posterior. */
+  setCredentialRotator(rotator: CredentialRotator | null): void {
+    this.credentialRotator = rotator;
+  }
+
   /**
    * Cifra `plaintext` y lo emplaza en `cred.secretCipher`, dejando el secreto
    * listo para serializar a disco SIN `secretValue`. Idempotente respecto a
@@ -225,6 +248,7 @@ export class SqliteControlPlane {
     const result = { ...cred };
     delete result.secretValue;
     delete result.secretCipher;
+    delete result.pendingSecretCipher;
     result.maskedValue = "••••••••";
     return result;
   }
@@ -530,6 +554,15 @@ export class SqliteControlPlane {
    * internamente al ejecutor; nunca se expone al agente.
    */
   resolveLoginCredential(server: ServerRecord): ResolvedCredential | null {
+    const best = this.selectLoginCredential(server);
+    if (!best) return null;
+    const kind = best.cred.type === "ssh_key" ? "privateKey" : "password";
+    if (!best.cred.secretValue) return null;
+    return { username: best.username, secret: best.cred.secretValue, kind };
+  }
+
+  /** Selecciona la misma credencial que utilizaría el ejecutor, sin exponerla. */
+  private selectLoginCredential(server: ServerRecord): ServerCredential | null {
     const matches: ServerCredential[] = [];
     const rows = this.db.prepare("SELECT data FROM credentials").all() as { data: string }[];
     for (const row of rows) {
@@ -551,10 +584,7 @@ export class SqliteControlPlane {
       return typeRank * 100 + envRank * 10 + aliasRank;
     };
     matches.sort((left, right) => rank(right) - rank(left));
-    const best = matches[0]!;
-    const kind = best.cred.type === "ssh_key" ? "privateKey" : "password";
-    if (!best.cred.secretValue) return null;
-    return { username: best.username, secret: best.cred.secretValue, kind };
+    return matches[0]!;
   }
 
   private usernameFromAlias(alias: string, serverName: string): string | null {
@@ -714,7 +744,9 @@ export class SqliteControlPlane {
       version: 1,
       lastRotatedAt: new Date().toISOString(),
       expiresAt: null,
-      exportable: input.exportable ?? true,
+      // Toda credencial puede recuperarse desde la consola por un administrador
+      // autenticado. Se conserva el campo por compatibilidad del contrato.
+      exportable: true,
       maskedValue: "••••••••",
       secretValue: plaintext
     };
@@ -735,12 +767,6 @@ export class SqliteControlPlane {
       this.audit(context, "credential:reveal", "denied", [id], "NOT_FOUND");
       throw new DomainError("NOT_FOUND", `Credencial '${id}' no encontrada`);
     }
-    const stored = JSON.parse(row.data) as CredentialRecord;
-    if (!stored.exportable) {
-      this.audit(context, "credential:reveal", "denied", [id], "NON_EXPORTABLE");
-      throw new DomainError("POLICY_DENIED", "La credencial no es exportable por política de seguridad");
-    }
-
     this.audit(context, "credential:reveal", "allowed", [id], reason || "HUMAN_REVEAL_REQUEST");
     const cred = this.loadCredentialRecord(row.data);
     return cred.secretValue || "secret_not_set";
@@ -823,9 +849,29 @@ export class SqliteControlPlane {
    * la consola admin opera con `isAdmin`. No expone material secreto (los
    * ServerRecord no contienen secretos).
    */
-  listServersForAdmin(): ServerRecord[] {
+  listServersForAdmin(): Array<ServerRecord & {
+    credentialBinding: {
+      credentialId: string;
+      credentialAlias: string;
+      username: string;
+      type: CredentialType;
+    } | null;
+  }> {
     return this.getAllServers()
-      .map((server) => ({ ...server }))
+      .map((server) => {
+        const selected = this.selectLoginCredential(server);
+        return {
+          ...server,
+          credentialBinding: selected
+            ? {
+                credentialId: selected.cred.id,
+                credentialAlias: selected.cred.alias,
+                username: selected.username,
+                type: selected.cred.type
+              }
+            : null
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -1362,18 +1408,80 @@ export class SqliteControlPlane {
   }
 
   private rotateCredential(input: JsonObject, context: RequestContext): Promise<JsonObject> {
-    return this.idempotent("secureit.credentials.rotate", input, () => {
+    return this.idempotent("secureit.credentials.rotate", input, async () => {
       const servers = this.resolveManagedServers(asStringArray(input.server_ids), context);
       const profile = this.requireProfile(asString(input.access_profile_id));
       if (servers.some((server) => server.accessProfileId !== profile.id)) {
         throw new DomainError("POLICY_DENIED", "El perfil no está asociado a todos los objetivos");
       }
-      void context;
+      const rotationJobId = randomUUID();
+      if (!this.credentialRotator) {
+        this.audit(context, "credential:rotate", "denied", servers.map((server) => server.id), "ROTATOR_UNAVAILABLE");
+        return {
+          rotation_job_id: rotationJobId,
+          status: "failed",
+          target_count: servers.length,
+          opaque_version_id: null,
+          verified_at: null,
+          admin_action_required: false
+        };
+      }
+
+      let versionId: string | null = null;
+      for (const server of servers) {
+        const selected = this.selectLoginCredential(server);
+        if (!selected || selected.cred.type !== "db_password") {
+          this.audit(context, "credential:rotate", "denied", [server.id], "PASSWORD_CREDENTIAL_REQUIRED");
+          return {
+            rotation_job_id: rotationJobId,
+            status: "failed",
+            target_count: servers.length,
+            opaque_version_id: null,
+            verified_at: null,
+            admin_action_required: false
+          };
+        }
+
+        // Se genera dentro del plano de control y solo se entrega al ejecutor.
+        const newPassword = `${randomBytes(24).toString("base64url")}!aA7`;
+        // Write-ahead cifrado: si el proceso cae después del cambio remoto, la
+        // candidata no se pierde y puede reanudarse/recuperarse administrativamente.
+        selected.cred.pendingSecretCipher = encryptSecret(newPassword, this.masterKey, this.inMemory);
+        this.db.prepare("UPDATE credentials SET data = ? WHERE id = ?")
+          .run(JSON.stringify(selected.cred), selected.cred.id);
+        const outcome = await this.credentialRotator.rotatePassword(server, newPassword);
+        if (!outcome.verified) {
+          this.audit(context, "credential:rotate", "denied", [server.id], "REMOTE_ROTATION_FAILED");
+          return {
+            rotation_job_id: rotationJobId,
+            status: "failed",
+            target_count: servers.length,
+            opaque_version_id: null,
+            verified_at: null,
+            admin_action_required: false
+          };
+        }
+
+        const cred = selected.cred;
+        cred.version += 1;
+        cred.lastRotatedAt = new Date().toISOString();
+        cred.status = "active";
+        cred.exportable = true;
+        this.persistCredentialSecret(cred, newPassword);
+        delete cred.pendingSecretCipher;
+        this.db.prepare("UPDATE credentials SET data = ? WHERE id = ?").run(JSON.stringify(cred), cred.id);
+        versionId = `${cred.id}:v${cred.version}`;
+        this.audit(context, "credential:rotate", "allowed", [server.id, cred.id], "REMOTE_ROTATION_VERIFIED");
+      }
+
+      const verifiedAt = new Date().toISOString();
       return {
-        rotation_job_id: randomUUID(),
-        status: "awaiting_approval",
+        rotation_job_id: rotationJobId,
+        status: "completed",
         target_count: servers.length,
-        admin_action_required: true
+        opaque_version_id: versionId,
+        verified_at: verifiedAt,
+        admin_action_required: false
       };
     });
   }
@@ -1493,7 +1601,7 @@ export class SqliteControlPlane {
       results: servers.map((server, index) => {
         const outcome = outcomes[index] ?? { stdout: "", stderr: "secure-it: sin resultado", exitCode: null, durationMs: 0 };
         const sanitized = sanitizeOutput(outcome.stdout, 65_536);
-        const failed = outcome.exitCode !== 0 && outcome.exitCode !== null;
+        const failed = outcome.exitCode !== 0;
         return {
           serverId: server.id,
           serverAlias: server.name,

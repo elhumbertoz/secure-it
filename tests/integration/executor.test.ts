@@ -6,6 +6,7 @@ import {
   DomainError,
   type ActionExecutor,
   type ActionDefinition,
+  type CredentialRotator,
   type CredentialRecord
 } from "@secure-it/control-plane";
 
@@ -118,6 +119,35 @@ describe("ejecutor real inyectado en SqliteControlPlane", () => {
     const results = job.results as Array<Record<string, unknown>>;
     expect(results[0]!["secret_detected"]).toBe(true);
     expect(results[0]!["stdout_excerpt"]).toBeNull();
+  });
+
+  it("rota, verifica y persiste una nueva versión sin exponer el secreto", async () => {
+    cp = new SqliteControlPlane({ inMemory: true, seedTestServer: true });
+    linkTestCredential(cp);
+    let receivedSecret = "";
+    const rotator: CredentialRotator = {
+      name: "fake-rotator",
+      async rotatePassword(_server, newPassword) {
+        receivedSecret = newPassword;
+        return { verified: true };
+      }
+    };
+    cp.setCredentialRotator(rotator);
+    const result = await cp.call("secureit.credentials.rotate", {
+      server_ids: [TEST_SERVER_ID],
+      access_profile_id: "10000000-0000-4000-8000-000000000001",
+      reason: "Rotación real verificada en prueba",
+      idempotency_key: randomUUID()
+    }, { ...context, scopes: allScopes });
+
+    expect(result.status).toBe("completed");
+    expect(result.admin_action_required).toBe(false);
+    expect(receivedSecret.length).toBeGreaterThanOrEqual(32);
+    expect(JSON.stringify(result)).not.toContain(receivedSecret);
+    const resolved = cp.resolveLoginCredential(
+      JSON.parse((cp["db"].prepare("SELECT data FROM servers WHERE id = ?").get(TEST_SERVER_ID) as { data: string }).data)
+    );
+    expect(resolved?.secret).toBe(receivedSecret);
   });
 
   it("ejecuta acciones read-only en prod directamente (sin awaiting_approval)", async () => {

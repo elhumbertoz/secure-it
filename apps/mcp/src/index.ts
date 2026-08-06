@@ -8,6 +8,7 @@ async function main(): Promise<void> {
   const executor = new SshExecutor((server) => controlPlane.resolveLoginCredential(server));
   controlPlane.setExecutor(executor);
   controlPlane.setScriptExecutor(executor);
+  controlPlane.setCredentialRotator(executor);
 
   const adminPort = Number(process.env.ADMIN_PORT || 4000);
   const { app } = createAdminServer({ controlPlane });

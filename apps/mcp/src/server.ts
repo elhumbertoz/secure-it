@@ -41,6 +41,7 @@ function buildSqliteControlPlane(): SqliteControlPlane {
   const executor = new SshExecutor((server) => cp.resolveLoginCredential(server));
   cp.setExecutor(executor);
   cp.setScriptExecutor(executor);
+  cp.setCredentialRotator(executor);
   return cp;
 }
 

@@ -525,7 +525,7 @@
     {
       "name": "secureit.credentials.rotate",
       "title": "Rotar una credencial sin verla",
-      "description": "Solicita una rotación por binding lógico. No acepta ni devuelve valores de credenciales.",
+      "description": "Rota inmediatamente la contraseña en el servidor, verifica el nuevo login y actualiza el almacén cifrado. No acepta ni devuelve secretos.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -549,7 +549,7 @@
         "required": ["rotation_job_id", "status", "target_count", "admin_action_required"],
         "properties": {
           "rotation_job_id": { "type": "string", "format": "uuid" },
-          "status": { "type": "string", "enum": ["awaiting_approval", "queued", "running", "completed", "failed"] },
+          "status": { "type": "string", "enum": ["completed", "failed"] },
           "target_count": { "type": "integer", "minimum": 1, "maximum": 20 },
           "opaque_version_id": { "type": ["string", "null"], "maxLength": 256 },
           "verified_at": { "type": ["string", "null"], "format": "date-time" },

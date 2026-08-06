@@ -31,9 +31,7 @@ combinan ambos canales para dar de alta y operar el servidor.
 
 ## Requisitos previos
 
-- Tener el agente MCP (`@secure-it/mcp`) configurado y el servidor corriendo
-  (ver `README.md`).
-- Tener la consola administrativa web accesible (ejecutando `npm run admin` o `npx @secure-it/admin`). Por defecto se ejecuta localmente en **`http://127.0.0.1:4000`**.
+- Tener la consola administrativa web accesible (se inicia automáticamente en **`http://127.0.0.1:4000`** al iniciar el agente con `npx -y @secure-it/mcp@beta`, o bien ejecutando manualmente `npm run admin` / `npx @secure-it/admin` en desarrollo).
 - Para el paso 4, disponer del **fingerprint SSH real** del host, obtenido por
   un canal distinto al del agente (por ejemplo `ssh-keyscan` hecho por la persona
   en su terminal):

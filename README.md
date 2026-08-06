@@ -77,15 +77,21 @@ No necesitas levantar contenedores Docker, instalar bases de datos PostgreSQL ni
 
 ### Una sola línea
 
-No necesitas crear un proyecto, clonar el repositorio ni configurar variables:
+No necesitas crear un proyecto, clonar el repositorio, configurar variables de entorno ni realizar instalaciones adicionales. Todo funciona con un solo comando:
 
 ```bash
 npx -y @secure-it/mcp@beta
 ```
 
-El primer arranque crea la base y su clave de cifrado local con permisos
-restrictivos, inicia MCP por `stdio` y abre la consola en
-`http://127.0.0.1:4000`. Entra allí una vez para crear tu cuenta administrativa.
+Este comando ahora realiza las siguientes acciones de forma automática:
+
+- **Instala automáticamente todas las dependencias.**
+- **Inicia el MCP por stdio** (listo para tu cliente de IA).
+- **Inicia la consola administrativa** en `http://127.0.0.1:4000`.
+- **Crea automáticamente la base de datos SQLite**.
+- **Genera la clave maestra local** (`SECUREIT_MASTER_KEY`).
+- **Protege la base de datos y la clave** estableciendo permisos restrictivos `0600`.
+- **Permite crear el administrador** desde la consola web durante el primer acceso.
 
 ### Configura tu Cliente de IA
 
