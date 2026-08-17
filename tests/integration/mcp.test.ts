@@ -150,6 +150,24 @@ describe("servidor MCP", () => {
     expect(result.structuredContent).toHaveProperty("credential_id");
   });
 
+  it("rechaza altas incompletas para no marcar como managed un servidor sin credencial utilizable", async () => {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createMcpServer({
+      scopes: new Set(["secureit:servers:write"]),
+      controlPlane: new SqliteControlPlane({ inMemory: true })
+    });
+    const client = new Client({ name: "integration-test", version: "1.0.0" });
+    closeables.push(client, server);
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const result = await client.callTool({
+      name: "secureit.servers.add",
+      arguments: { name: "incomplete.example", username: "humberto" }
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
   it("permite registrar servidores con dominios de producción reales como api.aisolutionshub.ec", async () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const server = createMcpServer({

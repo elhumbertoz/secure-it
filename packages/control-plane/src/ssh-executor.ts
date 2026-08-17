@@ -79,8 +79,11 @@ export class SshExecutor implements ActionExecutor, ScriptExecutor, CredentialRo
       );
 
       client.on("ready", () => {
-        const command = "sudo -S -p '[secure-it-sudo]' sh -c 'echo [secure-it-ready]; exec chpasswd'";
-        client.exec(command, { pty: false }, (err, stream) => {
+        // Algunos hosts aplican `Defaults use_pty` en sudo. Se desactiva el eco
+        // antes de abrir el prompt para que ni la contraseña vigente ni la nueva
+        // puedan reaparecer en la salida del pseudo-terminal.
+        const command = "stty -echo; sudo -S -p '[secure-it-sudo]' sh -c 'echo [secure-it-ready]; exec chpasswd'";
+        client.exec(command, { pty: true }, (err, stream) => {
           if (err) return finish({ verified: false, error: "No se pudo iniciar chpasswd" });
           let output = "";
           let sudoSent = false;

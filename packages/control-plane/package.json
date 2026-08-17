@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/control-plane",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -23,7 +23,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@secure-it/contracts": "0.1.0-beta.1",
+    "@secure-it/contracts": "0.1.0-beta.2",
     "ssh2": "^1.17.0"
   }
 }

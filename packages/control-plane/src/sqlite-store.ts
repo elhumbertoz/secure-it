@@ -1102,11 +1102,18 @@ export class SqliteControlPlane {
       const username = typeof input.username === "string" ? input.username : undefined;
       const secretVal = typeof input.password === "string" ? input.password : (typeof input.secret_value === "string" ? input.secret_value : undefined);
 
+      if ((username && !secretVal) || (!username && secretVal)) {
+        throw new DomainError(
+          "INVALID_ARGUMENT",
+          "Para un alta operativa en un solo paso debes proporcionar juntos 'username' y 'password' (o 'secret_value')."
+        );
+      }
+
       let bindingReady = false;
       let identityReady = false;
       let credentialId: string | null = null;
 
-      if (username || secretVal) {
+      if (username && secretVal) {
         const credAlias = typeof input.credential_alias === "string" ? input.credential_alias : `${name}:${username || "login"}`;
         const existingCred = this.db.prepare("SELECT data FROM credentials WHERE alias = ?").get(credAlias) as { data: string } | undefined;
         let cred: CredentialRecord;
@@ -1120,7 +1127,7 @@ export class SqliteControlPlane {
               owner,
               environment,
               exportable: true,
-              secretValue: secretVal || "password_not_set"
+              secretValue: secretVal
             },
             context
           );

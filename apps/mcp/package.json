@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/mcp",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "type": "module",
   "description": "Servidor MCP (Model Context Protocol) para operar infraestructura sin exponer credenciales al agente de IA.",
   "license": "MIT",
@@ -29,12 +29,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@secure-it/admin": "0.1.0-beta.1",
-    "@secure-it/contracts": "0.1.0-beta.1",
-    "@secure-it/control-plane": "0.1.0-beta.1",
+    "@secure-it/admin": "0.1.0-beta.2",
+    "@secure-it/contracts": "0.1.0-beta.2",
+    "@secure-it/control-plane": "0.1.0-beta.2",
     "express": "5.2.1",
-    "express-rate-limit": "8.6.1",
-    "jose": "6.2.4"
+    "express-rate-limit": "8.6.2",
+    "jose": "6.2.8"
   },
   "devDependencies": {
     "@types/express": "5.0.6"

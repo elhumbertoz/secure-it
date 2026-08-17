@@ -1,6 +1,6 @@
 {
   "name": "@secure-it/admin",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -25,10 +25,10 @@
     "secure-it-admin": "dist/index.js"
   },
   "dependencies": {
-    "@secure-it/contracts": "0.1.0-beta.1",
-    "@secure-it/control-plane": "0.1.0-beta.1",
+    "@secure-it/contracts": "0.1.0-beta.2",
+    "@secure-it/control-plane": "0.1.0-beta.2",
     "express": "5.2.1",
-    "express-rate-limit": "8.6.1"
+    "express-rate-limit": "8.6.2"
   },
   "devDependencies": {
     "@types/express": "5.0.6"

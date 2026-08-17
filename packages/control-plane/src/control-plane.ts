@@ -225,11 +225,18 @@ export class DemoControlPlane {
       const username = typeof input.username === "string" ? input.username : undefined;
       const secretVal = typeof input.password === "string" ? input.password : (typeof input.secret_value === "string" ? input.secret_value : undefined);
 
+      if ((username && !secretVal) || (!username && secretVal)) {
+        throw new DomainError(
+          "INVALID_ARGUMENT",
+          "Para un alta operativa en un solo paso debes proporcionar juntos 'username' y 'password' (o 'secret_value')."
+        );
+      }
+
       let bindingReady = false;
       let identityReady = false;
       let credentialId: string | null = null;
 
-      if (username || secretVal) {
+      if (username && secretVal) {
         bindingReady = true;
         identityReady = true;
         credentialId = `cred-${randomUUID().slice(0, 8)}`;
